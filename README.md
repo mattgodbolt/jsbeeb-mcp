@@ -16,8 +16,12 @@ npm install
 ## Running
 
 ```bash
-# Starts the MCP server on stdin/stdout (for use by an MCP client)
-node server.js
+# via npx (no install needed)
+npx jsbeeb-mcp
+
+# or if installed globally
+npm install -g jsbeeb-mcp
+jsbeeb-mcp
 ```
 
 ## Connecting to Claude Desktop
@@ -28,8 +32,8 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 {
   "mcpServers": {
     "jsbeeb": {
-      "command": "node",
-      "args": ["/path/to/jsbeeb-mcp/server.js"]
+      "command": "npx",
+      "args": ["jsbeeb-mcp"]
     }
   }
 }

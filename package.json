@@ -7,6 +7,10 @@
   "bin": {
     "jsbeeb-mcp": "./server.js"
   },
+  "files": [
+    "server.js",
+    "README.md"
+  ],
   "scripts": {
     "start": "node server.js",
     "test": "node test-mcp-client.js"
@@ -25,5 +29,5 @@
   },
   "keywords": ["bbc-micro", "mcp", "emulator", "jsbeeb", "ai"],
   "author": "Matt Godbolt",
-  "license": "BSD-2-Clause"
+  "license": "GPL-3.0-or-later"
 }
