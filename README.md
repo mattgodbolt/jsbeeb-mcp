@@ -7,26 +7,22 @@ to AI assistants (Claude, Cursor, etc.).
 Write a BASIC program, run it, get the text output and a screenshot — all
 without opening a browser.
 
-## Setup
+## Quick start — no install needed
 
 ```bash
-npm install
-```
-
-## Running
-
-```bash
-# via npx (no install needed)
 npx jsbeeb-mcp
-
-# or if installed globally
-npm install -g jsbeeb-mcp
-jsbeeb-mcp
 ```
 
-## Connecting to Claude Desktop
+That's it. `npx` downloads and runs the server on demand.
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+## Connecting to your LLM
+
+### Claude Desktop
+
+Add to your config file and restart Claude:
+
+- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 
 ```json
 {
@@ -37,6 +33,66 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
     }
   }
 }
+```
+
+### Claude Code (CLI)
+
+```bash
+claude mcp add jsbeeb -- npx jsbeeb-mcp
+```
+
+Or add directly in `.claude/settings.json` (project-level) or
+`~/.claude/settings.json` (global):
+
+```json
+{
+  "mcpServers": {
+    "jsbeeb": {
+      "command": "npx",
+      "args": ["jsbeeb-mcp"]
+    }
+  }
+}
+```
+
+### Cursor
+
+Add to `.cursor/mcp.json` in your project root or `~/.cursor/mcp.json` globally:
+
+```json
+{
+  "mcpServers": {
+    "jsbeeb": {
+      "command": "npx",
+      "args": ["jsbeeb-mcp"]
+    }
+  }
+}
+```
+
+### VS Code (GitHub Copilot)
+
+Add to `.vscode/mcp.json` in your project:
+
+```json
+{
+  "servers": {
+    "jsbeeb": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["jsbeeb-mcp"]
+    }
+  }
+}
+```
+
+### Anything else that speaks MCP
+
+Run the server and point your client at it:
+
+```bash
+npx jsbeeb-mcp
+# server speaks JSON-RPC over stdio
 ```
 
 ## Tools
