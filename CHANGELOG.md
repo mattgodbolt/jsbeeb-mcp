@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v1.1.0...v1.1.1) (2026-02-23)
+
+
+### Bug Fixes
+
+* don't wait for prompt after disc autoboot ([02ba3e6](https://github.com/mattgodbolt/jsbeeb-mcp/commit/02ba3e61e10254c106b7f27c04b4fc700d450f05))
+
 ## [1.1.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v1.0.1...v1.1.0) (2026-02-23)
 
 
