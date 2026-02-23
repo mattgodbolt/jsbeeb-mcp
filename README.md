@@ -9,10 +9,6 @@ without opening a browser.
 
 ## Setup
 
-> **Note:** `jsbeeb` is not yet published to npm. The `package.json` currently
-> references the `claude/headless-machine` branch. Once that PR merges and
-> jsbeeb is on npm this will become a normal versioned dependency.
-
 ```bash
 npm install
 ```
