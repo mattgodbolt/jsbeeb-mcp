@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v1.0.1...v1.1.0) (2026-02-23)
+
+
+### Features
+
+* add key_down, key_up, reset, boot_disc, and run_disc tools ([af798cc](https://github.com/mattgodbolt/jsbeeb-mcp/commit/af798cc33a370397e99d2a99fe07f9ea452a0473))
+
 ## [1.0.1](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v1.0.0...v1.0.1) (2026-02-23)
 
 
