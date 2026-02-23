@@ -1,0 +1,29 @@
+{
+  "name": "jsbeeb-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for jsbeeb — lets AI assistants control a headless BBC Micro emulator",
+  "type": "module",
+  "main": "server.js",
+  "bin": {
+    "jsbeeb-mcp": "./server.js"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test-mcp-client.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "jsbeeb": "file:../jsbeeb",
+    "sharp": "^0.34.5"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mattgodbolt/jsbeeb-mcp.git"
+  },
+  "keywords": ["bbc-micro", "mcp", "emulator", "jsbeeb", "ai"],
+  "author": "Matt Godbolt",
+  "license": "BSD-2-Clause"
+}
