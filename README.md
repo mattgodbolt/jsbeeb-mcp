@@ -9,19 +9,11 @@ without opening a browser.
 
 ## Setup
 
-> **Note:** `jsbeeb` is not yet published to npm. Until it is, you need a local
-> checkout alongside this repo:
->
-> ```
-> ~/dev/jsbeeb/        ← clone of mattgodbolt/jsbeeb
-> ~/dev/jsbeeb-mcp/    ← this repo
-> ```
->
-> The `package.json` uses `"jsbeeb": "file:../jsbeeb"`. Once jsbeeb is on npm
-> this will become a normal versioned dependency.
+> **Note:** `jsbeeb` is not yet published to npm. The `package.json` currently
+> references the `claude/headless-machine` branch. Once that PR merges and
+> jsbeeb is on npm this will become a normal versioned dependency.
 
 ```bash
-git clone https://github.com/mattgodbolt/jsbeeb ../jsbeeb
 npm install
 ```
 
@@ -104,15 +96,14 @@ For multi-step interaction (debugging, iterative development):
 ## Architecture
 
 ```
-server.js          # MCP server — tool definitions, session store
-machine-session.js # Wraps jsbeeb's TestMachine with real Video framebuffer
-                   # and accumulated text capture
-examples/          # Standalone scripts demonstrating MachineSession directly
+server.js   # MCP server — tool definitions, session store
+examples/   # Standalone scripts demonstrating MachineSession directly
 ```
 
-`MachineSession` uses jsbeeb's `TestMachine`, passing a real `Video` instance
-via `fake6502`'s `opts.video` override — so the full video chip runs and writes
-into a 1024×625 RGBA framebuffer. `sharp` encodes it to PNG on demand.
+`MachineSession` lives in jsbeeb itself (`src/machine-session.js`) and is
+imported here as `jsbeeb/machine-session`. It wraps jsbeeb's `TestMachine`
+with a real `Video` instance (full video chip into a 1024×625 RGBA
+framebuffer), VDU text capture, and screenshot support via `sharp`.
 
 Framebuffer snapshots are taken inside the `paint_ext` vsync callback (before
 the buffer is cleared), ensuring screenshots always show a complete frame.

@@ -8,7 +8,7 @@
  * Run with: node examples/beebasm-example.js
  */
 
-import { MachineSession } from "../machine-session.js";
+import { MachineSession } from "jsbeeb/machine-session";
 import { writeFileSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";

@@ -24,7 +24,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { MachineSession } from "./machine-session.js";
+import { MachineSession } from "jsbeeb/machine-session";
 
 // ---------------------------------------------------------------------------
 // Session store

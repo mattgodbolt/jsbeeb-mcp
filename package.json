@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
-    "jsbeeb": "file:../jsbeeb",
+    "jsbeeb": "github:mattgodbolt/jsbeeb#claude/headless-machine",
     "sharp": "^0.34.5"
   },
   "repository": {
