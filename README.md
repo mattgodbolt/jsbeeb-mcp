@@ -97,16 +97,32 @@ npx jsbeeb-mcp
 
 ## Tools
 
-### `run_basic` _(convenience — no session management needed)_
+### One-shot convenience tools _(no session management needed)_
 
-One-shot: boot a BBC Micro, load a BASIC program, run it, return text output
-and an optional screenshot, then clean up.
+#### `run_basic`
+
+Boot a BBC Micro, load a BASIC program, run it, return text output and an
+optional screenshot, then clean up.
 
 ```json
 {
   "source": "10 PRINT \"HELLO WORLD\"\n20 GOTO 10",
   "model": "B-DFS1.2",
   "timeout_secs": 10,
+  "screenshot": true
+}
+```
+
+#### `run_disc`
+
+Boot a BBC Micro, load a disc image, autoboot it (SHIFT+BREAK), return text
+output and an optional screenshot, then clean up.
+
+```json
+{
+  "image_path": "/path/to/game.ssd",
+  "model": "B-DFS1.2",
+  "timeout_secs": 30,
   "screenshot": true
 }
 ```
@@ -125,9 +141,29 @@ For multi-step interaction (debugging, iterative development):
 | `screenshot`       | Capture the current screen as a PNG image                      |
 | `read_memory`      | Read bytes from the memory map (with hex dump)                 |
 | `write_memory`     | Poke bytes into memory                                         |
-| `read_registers`   | Get 6502 CPU registers (PC, A, X, Y, S, P)                     |
-| `run_for_cycles`   | Run exactly N 2MHz CPU cycles                                  |
+| `read_registers`   | Get 6502 CPU registers (PC, A, X, Y, S, P)                    |
+| `run_for_cycles`   | Run exactly N 2MHz CPU cycles (drains output by default — use `clear: false` to peek without consuming) |
 | `load_disc`        | Load an `.ssd`/`.dsd` disc image into drive 0                  |
+| `key_down`         | Press and hold a key (e.g. `SHIFT`, `A`, `RETURN`, `F0`)      |
+| `key_up`           | Release a previously held key                                  |
+| `reset`            | Reset the machine; with `autoboot: true`, holds SHIFT during reset (SHIFT+BREAK) |
+| `boot_disc`        | Load a disc image and autoboot it (SHIFT+BREAK)                |
+
+### Composable keyboard control
+
+The `key_down`, `key_up`, and `reset` tools are low-level primitives that can be
+composed for full manual control. For example, to autoboot a disc:
+
+```
+key_down SHIFT → reset → run_for_cycles (1s) → key_up SHIFT → run_until_prompt
+```
+
+Or use `reset` with `autoboot: true` / `boot_disc` / `run_disc` for common cases.
+
+**Key names:** `SHIFT`, `CTRL`, `RETURN`, `SPACE`, `DELETE`, `BACKSPACE`,
+`ESCAPE`, `TAB`, `CAPS_LOCK`, `UP`, `DOWN`, `LEFT`, `RIGHT`, `F0`–`F9`,
+`A`–`Z`, `0`–`9`, plus punctuation (`COMMA`, `PERIOD`, `SLASH`, `SEMICOLON`,
+`QUOTE`, `MINUS`, `EQUALS`, etc.).
 
 ## What works
 
@@ -138,7 +174,8 @@ For multi-step interaction (debugging, iterative development):
 - ✅ CPU register inspection
 - ✅ BBC B and Master models
 - ✅ Multiple concurrent sessions
-- ✅ Disc image loading (`.ssd`/`.dsd`)
+- ✅ Disc image loading and autoboot (`.ssd`/`.dsd`)
+- ✅ Low-level keyboard control (key_down/key_up)
 
 ## Known limitations
 

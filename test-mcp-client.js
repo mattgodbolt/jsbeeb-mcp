@@ -72,6 +72,11 @@ async function main() {
     ok("has read_memory", toolNames.includes("read_memory"));
     ok("has write_memory", toolNames.includes("write_memory"));
     ok("has read_registers", toolNames.includes("read_registers"));
+    ok("has key_down", toolNames.includes("key_down"));
+    ok("has key_up", toolNames.includes("key_up"));
+    ok("has reset", toolNames.includes("reset"));
+    ok("has boot_disc", toolNames.includes("boot_disc"));
+    ok("has run_disc", toolNames.includes("run_disc"));
 
     // --- One-shot run_basic ---
     console.log("\n--- run_basic (one-shot) ---");
@@ -88,8 +93,9 @@ async function main() {
     ok("got a screenshot image", !!rbImg);
     ok("image is PNG (base64)", rbImg?.data?.length > 100);
     if (rbImg) {
-        writeFileSync("/home/molty/.openclaw/workspace/mcp-test-screenshot.png", Buffer.from(rbImg.data, "base64"));
-        console.log("  Screenshot saved.");
+        const screenshotPath = resolve(__dirname, "mcp-test-screenshot.png");
+        writeFileSync(screenshotPath, Buffer.from(rbImg.data, "base64"));
+        console.log(`  Screenshot saved to ${screenshotPath}`);
     }
 
     // --- Session-based workflow ---
@@ -155,6 +161,76 @@ async function main() {
     // destroy
     const destroyResult = await callTool(client, "destroy_machine", { session_id });
     ok("destroy succeeds", textContent(destroyResult).includes("destroyed"));
+
+    // --- key_down / key_up ---
+    console.log("\n--- key_down / key_up ---");
+    const createResult2 = await callTool(client, "create_machine", { model: "B-DFS1.2" });
+    const { session_id: sid2 } = JSON.parse(textContent(createResult2));
+
+    // Press 'A' via key_down, run cycles, release, then press RETURN to flush the line.
+    // Use clear=false on intermediate run_for_cycles so output accumulates.
+    const kdResult = await callTool(client, "key_down", { session_id: sid2, key: "A" });
+    ok("key_down returns confirmation", textContent(kdResult).includes("Key down"));
+    await callTool(client, "run_for_cycles", { session_id: sid2, cycles: 200000, clear: false });
+    await callTool(client, "key_up", { session_id: sid2, key: "A" });
+    // Press RETURN to flush the line — VDU capture buffers printable chars until CR/LF
+    await callTool(client, "key_down", { session_id: sid2, key: "RETURN" });
+    await callTool(client, "run_for_cycles", { session_id: sid2, cycles: 200000, clear: false });
+    await callTool(client, "key_up", { session_id: sid2, key: "RETURN" });
+    // Now run until the BASIC prompt returns and check for the 'A'
+    const keyOutput = await callTool(client, "run_until_prompt", { session_id: sid2 });
+    const keyText = JSON.parse(textContent(keyOutput));
+    console.log("key_down output:", JSON.stringify(keyText.screenText));
+    ok("key_down produced character", keyText.screenText.includes("A"));
+
+    // --- reset ---
+    console.log("\n--- reset ---");
+    const resetResult = await callTool(client, "reset", { session_id: sid2, hard: true });
+    const resetParsed = JSON.parse(textContent(resetResult));
+    ok("reset returns success", resetParsed.reset === true);
+    // After reset, run until prompt and check for BBC Computer banner
+    const postReset = await callTool(client, "run_until_prompt", { session_id: sid2 });
+    const postResetText = JSON.parse(textContent(postReset));
+    console.log("Post-reset output:", JSON.stringify(postResetText.screenText));
+    ok("reset reboots machine", postResetText.screenText.includes("BBC Computer"));
+
+    // --- reset with autoboot ---
+    console.log("\n--- reset with autoboot (after loading disc) ---");
+    const discPathBoot = resolve(__dirname, "examples/hello.ssd");
+    await callTool(client, "load_disc", { session_id: sid2, image_path: discPathBoot });
+    const autobootResult = await callTool(client, "reset", { session_id: sid2, hard: true, autoboot: true });
+    const autobootParsed = JSON.parse(textContent(autobootResult));
+    ok("autoboot returns output", !!autobootParsed.output);
+    console.log("Autoboot output:", JSON.stringify(autobootParsed.output.screenText));
+
+    await callTool(client, "destroy_machine", { session_id: sid2 });
+
+    // --- boot_disc ---
+    console.log("\n--- boot_disc ---");
+    const createResult3 = await callTool(client, "create_machine", { model: "B-DFS1.2" });
+    const { session_id: sid3 } = JSON.parse(textContent(createResult3));
+    const bootDiscResult = await callTool(client, "boot_disc", {
+        session_id: sid3,
+        image_path: resolve(__dirname, "examples/hello.ssd"),
+    });
+    const bootDiscParsed = JSON.parse(textContent(bootDiscResult));
+    console.log("boot_disc output:", JSON.stringify(bootDiscParsed.output.screenText));
+    ok("boot_disc returns output", !!bootDiscParsed.output);
+    ok("boot_disc loaded disc", bootDiscParsed.image_path.includes("hello.ssd"));
+    await callTool(client, "destroy_machine", { session_id: sid3 });
+
+    // --- run_disc (one-shot) ---
+    console.log("\n--- run_disc (one-shot) ---");
+    const runDiscResult = await callTool(client, "run_disc", {
+        image_path: resolve(__dirname, "examples/hello.ssd"),
+        screenshot: true,
+    });
+    const rdText = textContent(runDiscResult);
+    const rdParsed = JSON.parse(rdText);
+    console.log("run_disc output:", JSON.stringify(rdParsed.output.screenText));
+    ok("run_disc returns output", !!rdParsed.output);
+    const rdImg = imageContent(runDiscResult);
+    ok("run_disc returns screenshot", !!rdImg);
 
     // --- Results ---
     console.log(`\n${"─".repeat(40)}`);

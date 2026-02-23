@@ -1,4 +1,5 @@
 node_modules/
 examples/*.png
 *.ssd
+!examples/hello.ssd
 *.dsd

@@ -28,6 +28,75 @@ import { z } from "zod";
 import { MachineSession } from "jsbeeb/machine-session";
 
 // ---------------------------------------------------------------------------
+// BBC key name → browser keyCode mapping
+// ---------------------------------------------------------------------------
+
+const KeyNameToCode = {
+    // Modifiers
+    SHIFT: 16,
+    CTRL: 17,
+    // Special keys
+    RETURN: 13,
+    SPACE: 32,
+    DELETE: 46,
+    BACKSPACE: 8,
+    ESCAPE: 27,
+    TAB: 9,
+    CAPS_LOCK: 20,
+    // Arrow keys
+    UP: 38,
+    DOWN: 40,
+    LEFT: 37,
+    RIGHT: 39,
+    // Function keys (BBC f0–f9 map to keyCodes 112–121)
+    F0: 112,
+    F1: 113,
+    F2: 114,
+    F3: 115,
+    F4: 116,
+    F5: 117,
+    F6: 118,
+    F7: 119,
+    F8: 120,
+    F9: 121,
+    // Punctuation / symbols
+    COMMA: 188,
+    PERIOD: 190,
+    SLASH: 191,
+    SEMICOLON: 186,
+    QUOTE: 222,
+    OPEN_BRACKET: 219,
+    CLOSE_BRACKET: 221,
+    BACKSLASH: 220,
+    MINUS: 189,
+    EQUALS: 187,
+    BACKTICK: 192,
+};
+
+// Letters A–Z (keyCode = ASCII uppercase)
+for (let i = 0; i < 26; i++) {
+    const letter = String.fromCharCode(65 + i);
+    KeyNameToCode[letter] = 65 + i;
+}
+// Digits 0–9 (keyCode = ASCII '0'..'9')
+for (let i = 0; i <= 9; i++) {
+    KeyNameToCode[String(i)] = 48 + i;
+}
+
+function resolveKeyCode(keyName) {
+    const code = KeyNameToCode[keyName.toUpperCase()];
+    if (code === undefined) {
+        throw new Error(
+            `Unknown key name "${keyName}". Valid names: ${Object.keys(KeyNameToCode).join(", ")}`,
+        );
+    }
+    return code;
+}
+
+// Emulated time for ~1 second at 2 MHz
+const OneSec = 2_000_000;
+
+// ---------------------------------------------------------------------------
 // Session store
 // ---------------------------------------------------------------------------
 
@@ -309,7 +378,10 @@ server.tool(
 server.tool(
     "run_for_cycles",
     "Run the emulator for an exact number of 2MHz CPU cycles. " +
-        "Useful for precise timing, or just to advance the clock a bit between interactions.",
+        "Useful for precise timing, or just to advance the clock a bit between interactions. " +
+        "Returns accumulated text output. By default the output buffer is cleared after returning — " +
+        "pass clear=false when using this as an intermediate step (e.g. between key_down and key_up) " +
+        "to avoid losing output that you want to collect later via run_until_prompt.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
         cycles: z.number().int().min(1).describe("Number of 2MHz CPU cycles to execute"),
@@ -330,6 +402,151 @@ server.tool(
                 },
             ],
         };
+    },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: key_down
+// ---------------------------------------------------------------------------
+
+server.tool(
+    "key_down",
+    "Press and hold a key on the BBC Micro keyboard. " +
+        "Use key_up to release it later. Key names: SHIFT, CTRL, RETURN, SPACE, DELETE, " +
+        "BACKSPACE, ESCAPE, TAB, CAPS_LOCK, UP, DOWN, LEFT, RIGHT, F0–F9, A–Z, 0–9.",
+    {
+        session_id: z.string().describe("Session ID from create_machine"),
+        key: z.string().describe("Key name (e.g. 'SHIFT', 'A', 'RETURN', 'F0')"),
+    },
+    async ({ session_id, key }) => {
+        const session = requireSession(session_id);
+        const code = resolveKeyCode(key);
+        session.keyDown(code);
+        return { content: [{ type: "text", text: `Key down: ${key}` }] };
+    },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: key_up
+// ---------------------------------------------------------------------------
+
+server.tool(
+    "key_up",
+    "Release a previously held key on the BBC Micro keyboard.",
+    {
+        session_id: z.string().describe("Session ID from create_machine"),
+        key: z.string().describe("Key name (e.g. 'SHIFT', 'A', 'RETURN', 'F0')"),
+    },
+    async ({ session_id, key }) => {
+        const session = requireSession(session_id);
+        const code = resolveKeyCode(key);
+        session.keyUp(code);
+        return { content: [{ type: "text", text: `Key up: ${key}` }] };
+    },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: reset
+// ---------------------------------------------------------------------------
+
+server.tool(
+    "reset",
+    "Reset the BBC Micro. With autoboot=true, holds SHIFT during reset to trigger " +
+        "a disc autoboot (SHIFT+BREAK). Returns captured output after the machine settles.",
+    {
+        session_id: z.string().describe("Session ID from create_machine"),
+        hard: z.boolean().default(true).describe("Hard reset (power-on) if true, soft reset if false"),
+        autoboot: z
+            .boolean()
+            .default(false)
+            .describe("Hold SHIFT during reset to autoboot the disc in drive 0"),
+    },
+    async ({ session_id, hard, autoboot }) => {
+        const session = requireSession(session_id);
+        if (autoboot) {
+            session.keyDown(16); // SHIFT
+            session.reset(hard);
+            await session.runFor(OneSec);
+            session.keyUp(16);
+            const output = await session.runUntilPrompt(30);
+            return { content: [{ type: "text", text: JSON.stringify({ reset: true, autoboot: true, output }) }] };
+        }
+        session.reset(hard);
+        return { content: [{ type: "text", text: JSON.stringify({ reset: true, hard }) }] };
+    },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: boot_disc
+// ---------------------------------------------------------------------------
+
+server.tool(
+    "boot_disc",
+    "Load a disc image and autoboot it (SHIFT+BREAK). " +
+        "Equivalent to: load_disc → key_down SHIFT → reset → run until prompt → key_up SHIFT. " +
+        "Returns captured text output after the disc has booted.",
+    {
+        session_id: z.string().describe("Session ID from create_machine"),
+        image_path: z.string().describe("Absolute path to an .ssd or .dsd disc image file"),
+        timeout_secs: z.number().default(30).describe("Max emulated seconds to wait for the disc to boot"),
+    },
+    async ({ session_id, image_path, timeout_secs }) => {
+        const session = requireSession(session_id);
+        session.loadDisc(image_path);
+        session.keyDown(16); // SHIFT
+        session.reset(true);
+        await session.runFor(OneSec);
+        session.keyUp(16);
+        const output = await session.runUntilPrompt(timeout_secs);
+        return {
+            content: [{ type: "text", text: JSON.stringify({ image_path, output }) }],
+        };
+    },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: run_disc  (convenience: one-shot, no session management needed)
+// ---------------------------------------------------------------------------
+
+server.tool(
+    "run_disc",
+    "One-shot convenience tool: boot a BBC Micro, load a disc image, autoboot it " +
+        "(SHIFT+BREAK), return all text output and optionally a screenshot, then destroy the session. " +
+        "Like run_basic but for disc images.",
+    {
+        image_path: z.string().describe("Absolute path to an .ssd or .dsd disc image file"),
+        model: z.enum(["B-DFS1.2", "Master"]).default("B-DFS1.2").describe("BBC Micro model"),
+        timeout_secs: z.number().default(30).describe("Max emulated seconds to allow the disc to boot and run"),
+        screenshot: z.boolean().default(true).describe("Include a screenshot of the final screen state"),
+    },
+    async ({ image_path, model, timeout_secs, screenshot: wantScreenshot }) => {
+        const session = new MachineSession(model);
+        try {
+            await session.initialise();
+            await session.boot(30);
+            session.loadDisc(image_path);
+            session.keyDown(16); // SHIFT
+            session.reset(true);
+            await session.runFor(OneSec);
+            session.keyUp(16);
+            const output = await session.runUntilPrompt(timeout_secs);
+
+            const result = { image_path, output };
+
+            if (wantScreenshot) {
+                const png = await session.screenshotActive();
+                return {
+                    content: [
+                        { type: "text", text: JSON.stringify(result) },
+                        { type: "image", data: png.toString("base64"), mimeType: "image/png" },
+                    ],
+                };
+            }
+
+            return { content: [{ type: "text", text: JSON.stringify(result) }] };
+        } finally {
+            session.destroy();
+        }
     },
 );
 
