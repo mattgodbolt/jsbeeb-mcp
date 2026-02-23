@@ -452,7 +452,8 @@ server.tool(
 server.tool(
     "reset",
     "Reset the BBC Micro. With autoboot=true, holds SHIFT during reset to trigger " +
-        "a disc autoboot (SHIFT+BREAK). Returns captured output after the machine settles.",
+        "a disc autoboot (SHIFT+BREAK). The boot sequence is initiated but not run to completion — " +
+        "use run_for_cycles or run_until_prompt afterwards as needed.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
         hard: z.boolean().default(true).describe("Hard reset (power-on) if true, soft reset if false"),
@@ -468,8 +469,7 @@ server.tool(
             session.reset(hard);
             await session.runFor(OneSec);
             session.keyUp(16);
-            const output = await session.runUntilPrompt(30);
-            return { content: [{ type: "text", text: JSON.stringify({ reset: true, autoboot: true, output }) }] };
+            return { content: [{ type: "text", text: JSON.stringify({ reset: true, autoboot: true }) }] };
         }
         session.reset(hard);
         return { content: [{ type: "text", text: JSON.stringify({ reset: true, hard }) }] };
@@ -483,23 +483,22 @@ server.tool(
 server.tool(
     "boot_disc",
     "Load a disc image and autoboot it (SHIFT+BREAK). " +
-        "Equivalent to: load_disc → key_down SHIFT → reset → run until prompt → key_up SHIFT. " +
-        "Returns captured text output after the disc has booted.",
+        "Equivalent to: load_disc → key_down SHIFT → reset → key_up SHIFT. " +
+        "The boot sequence is initiated but not run to completion — " +
+        "use run_for_cycles or run_until_prompt afterwards as needed.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
         image_path: z.string().describe("Absolute path to an .ssd or .dsd disc image file"),
-        timeout_secs: z.number().default(30).describe("Max emulated seconds to wait for the disc to boot"),
     },
-    async ({ session_id, image_path, timeout_secs }) => {
+    async ({ session_id, image_path }) => {
         const session = requireSession(session_id);
         session.loadDisc(image_path);
         session.keyDown(16); // SHIFT
         session.reset(true);
         await session.runFor(OneSec);
         session.keyUp(16);
-        const output = await session.runUntilPrompt(timeout_secs);
         return {
-            content: [{ type: "text", text: JSON.stringify({ image_path, output }) }],
+            content: [{ type: "text", text: JSON.stringify({ image_path, booting: true }) }],
         };
     },
 );
@@ -529,7 +528,8 @@ server.tool(
             session.reset(true);
             await session.runFor(OneSec);
             session.keyUp(16);
-            const output = await session.runUntilPrompt(timeout_secs);
+            await session.runFor(timeout_secs * 2_000_000);
+            const output = session.drainOutput();
 
             const result = { image_path, output };
 

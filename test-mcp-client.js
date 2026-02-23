@@ -200,8 +200,12 @@ async function main() {
     await callTool(client, "load_disc", { session_id: sid2, image_path: discPathBoot });
     const autobootResult = await callTool(client, "reset", { session_id: sid2, hard: true, autoboot: true });
     const autobootParsed = JSON.parse(textContent(autobootResult));
-    ok("autoboot returns output", !!autobootParsed.output);
-    console.log("Autoboot output:", JSON.stringify(autobootParsed.output.screenText));
+    ok("autoboot confirms", autobootParsed.autoboot === true);
+    // Run until the disc program finishes and we're back at the prompt
+    const autobootRun = await callTool(client, "run_until_prompt", { session_id: sid2 });
+    const autobootOutput = JSON.parse(textContent(autobootRun));
+    console.log("Autoboot output:", JSON.stringify(autobootOutput.screenText));
+    ok("autoboot ran disc", autobootOutput.screenText.includes("HELLO FROM BEEBASM"));
 
     await callTool(client, "destroy_machine", { session_id: sid2 });
 
@@ -214,9 +218,13 @@ async function main() {
         image_path: resolve(__dirname, "examples/hello.ssd"),
     });
     const bootDiscParsed = JSON.parse(textContent(bootDiscResult));
-    console.log("boot_disc output:", JSON.stringify(bootDiscParsed.output.screenText));
-    ok("boot_disc returns output", !!bootDiscParsed.output);
+    ok("boot_disc confirms", bootDiscParsed.booting === true);
     ok("boot_disc loaded disc", bootDiscParsed.image_path.includes("hello.ssd"));
+    // Run until prompt to verify the disc actually booted
+    const bootDiscRun = await callTool(client, "run_until_prompt", { session_id: sid3 });
+    const bootDiscOutput = JSON.parse(textContent(bootDiscRun));
+    console.log("boot_disc output:", JSON.stringify(bootDiscOutput.screenText));
+    ok("boot_disc ran disc", bootDiscOutput.screenText.includes("HELLO FROM BEEBASM"));
     await callTool(client, "destroy_machine", { session_id: sid3 });
 
     // --- run_disc (one-shot) ---
