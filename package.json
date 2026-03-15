@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
-    "jsbeeb": "^1.4.0",
+    "jsbeeb": "^1.5.0",
     "sharp": "^0.34.5"
   },
   "repository": {

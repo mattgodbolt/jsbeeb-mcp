@@ -594,6 +594,152 @@ server.tool(
 );
 
 // ---------------------------------------------------------------------------
+// Sound chip tools
+// ---------------------------------------------------------------------------
+
+server.tool(
+    "read_sound_state",
+    "Read the SN76489 sound chip's current register state: tone periods for " +
+        "channels 0–2, noise register, volume/attenuation for all 4 channels, " +
+        "LFSR state, and which register is latched. Useful for verifying what " +
+        "the program has written to the sound chip.",
+    {
+        session_id: z.string().describe("Session ID from create_machine"),
+    },
+    async ({ session_id }) => {
+        const session = requireSession(session_id);
+        const sc = session._soundChip;
+        if (!sc || !sc.getState) {
+            return { content: [{ type: "text", text: "Sound chip not available (session may be using FakeSoundChip)" }] };
+        }
+        const state = sc.getState();
+        // Convert tone periods to frequencies for convenience
+        const freqs = state.tone.map((t) => (t === 0 ? 0 : 4000000 / (32 * t)));
+        const lines = [
+            `CH0: tone=${state.tone[0]} (${freqs[0].toFixed(1)}Hz) vol=${state.volume[0]}`,
+            `CH1: tone=${state.tone[1]} (${freqs[1].toFixed(1)}Hz) vol=${state.volume[1]}`,
+            `CH2: tone=${state.tone[2]} (${freqs[2].toFixed(1)}Hz) vol=${state.volume[2]}`,
+            `CH3: noise=${state.noise} vol=${state.volume[3]}`,
+            `Latched register: 0x${state.latchedRegister.toString(16).padStart(2, "0")}`,
+            `LFSR: 0x${state.lfsr.toString(16).padStart(4, "0")}`,
+        ];
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+    },
+);
+
+server.tool(
+    "start_sound_capture",
+    "Start capturing all SN76489 sound chip writes. Every byte written to the " +
+        "chip is logged with its cycle timestamp. Use stop_sound_capture to " +
+        "retrieve the log. Clears any previous capture.",
+    {
+        session_id: z.string().describe("Session ID from create_machine"),
+    },
+    async ({ session_id }) => {
+        const session = requireSession(session_id);
+        const sc = session._soundChip;
+        if (!sc || !sc.startCapture) {
+            return { content: [{ type: "text", text: "Sound chip capture not available" }] };
+        }
+        sc.startCapture();
+        return { content: [{ type: "text", text: "Sound capture started. Run the emulator, then call stop_sound_capture." }] };
+    },
+);
+
+server.tool(
+    "stop_sound_capture",
+    "Stop capturing SN76489 writes and return the log. Each entry has a cycle " +
+        "timestamp and the byte value written. The values are decoded into " +
+        "human-readable form (channel, tone/volume, value).",
+    {
+        session_id: z.string().describe("Session ID from create_machine"),
+        max_entries: z.number().default(500).describe("Maximum number of entries to return (most recent if exceeded)"),
+    },
+    async ({ session_id, max_entries }) => {
+        const session = requireSession(session_id);
+        const sc = session._soundChip;
+        if (!sc || !sc.stopCapture) {
+            return { content: [{ type: "text", text: "Sound chip capture not available" }] };
+        }
+        const writes = sc.stopCapture();
+        const total = writes.length;
+
+        // Decode SN76489 writes
+        let latched = 0;
+        const decoded = writes.slice(-max_entries).map((w) => {
+            const v = w.value;
+            let desc;
+            if (v & 0x80) {
+                // LATCH byte
+                const ch = (v >> 5) & 3;
+                const isVol = (v >> 4) & 1;
+                const data = v & 0x0f;
+                latched = v & 0x70;
+                if (isVol) {
+                    desc = `CH${ch} vol atten=${data} ${data === 15 ? "(silent)" : ""}`;
+                } else if (ch === 3) {
+                    desc = `Noise: ${data}`;
+                } else {
+                    desc = `CH${ch} tone lo=${data}`;
+                }
+            } else {
+                // DATA byte
+                const ch = (latched >> 5) & 3;
+                const isVol = (latched >> 4) & 1;
+                const data = v & 0x3f;
+                const bit6 = (v >> 6) & 1;
+                if (isVol) {
+                    desc = `CH${ch} vol DATA=${data}`;
+                } else {
+                    desc = `CH${ch} tone hi=${data}${bit6 ? " [bit6=BASS]" : ""}`;
+                }
+            }
+            return `${w.cycle}: 0x${v.toString(16).padStart(2, "0")} ${desc}`;
+        });
+
+        const header = total > max_entries
+            ? `Showing last ${max_entries} of ${total} writes:\n`
+            : `${total} writes captured:\n`;
+
+        return { content: [{ type: "text", text: header + decoded.join("\n") }] };
+    },
+);
+
+server.tool(
+    "set_breakpoint",
+    "Set a breakpoint on a memory address. The emulator will stop when the " +
+        "CPU's program counter reaches this address. Use run_for_cycles after " +
+        "setting the breakpoint — it will return early if the breakpoint is hit. " +
+        "Returns the CPU registers at the point of the break.",
+    {
+        session_id: z.string().describe("Session ID from create_machine"),
+        address: z.number().min(0).max(65535).describe("Address to break on (0–65535)"),
+        timeout_secs: z.number().default(10).describe("Max emulated seconds to wait for breakpoint"),
+    },
+    async ({ session_id, address, timeout_secs }) => {
+        const session = requireSession(session_id);
+        try {
+            await session.runUntilAddress(address, timeout_secs);
+            const regs = session.registers();
+            return {
+                content: [{
+                    type: "text",
+                    text: `Breakpoint hit at $${address.toString(16).padStart(4, "0")}\n` +
+                        `PC=$${regs.pc.toString(16).padStart(4, "0")} ` +
+                        `A=$${regs.a.toString(16).padStart(2, "0")} ` +
+                        `X=$${regs.x.toString(16).padStart(2, "0")} ` +
+                        `Y=$${regs.y.toString(16).padStart(2, "0")} ` +
+                        `S=$${regs.s.toString(16).padStart(2, "0")} ` +
+                        `P=$${regs.p.toString(16).padStart(2, "0")}`,
+                }],
+            };
+        } catch (e) {
+            return { content: [{ type: "text", text: `Breakpoint not hit within ${timeout_secs}s: ${e.message}` }] };
+        }
+    },
+);
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
