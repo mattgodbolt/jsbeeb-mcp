@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v1.1.1...v1.2.0) (2026-03-15)
+
+
+### Features
+
+* add sound chip debugging tools ([2df70d0](https://github.com/mattgodbolt/jsbeeb-mcp/commit/2df70d03dbe77e6a8545277d43c25a586b099a04))
+
 ## [1.1.1](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v1.1.0...v1.1.1) (2026-02-23)
 
 
