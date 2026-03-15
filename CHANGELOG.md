@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v1.2.0...v1.2.1) (2026-03-15)
+
+
+### Bug Fixes
+
+* update lockfile for jsbeeb 1.5.0 ([e38341f](https://github.com/mattgodbolt/jsbeeb-mcp/commit/e38341f50d6ea9130b6d1a0ac39f8c736089f080))
+
 ## [1.2.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v1.1.1...v1.2.0) (2026-03-15)
 
 
