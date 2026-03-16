@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v1.2.1...v2.0.0) (2026-03-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* set_breakpoint no longer runs the emulator. It installs a persistent breakpoint hook and returns immediately. run_for_cycles now resets hit flags before running and includes breakpoint hit info (with registers) in the response when one fires.
+
+### Features
+
+* redesign set_breakpoint as install-only, add clear_breakpoint ([23f94e5](https://github.com/mattgodbolt/jsbeeb-mcp/commit/23f94e5b732f8a6d5d9bafa08a5250668b5b4ca1))
+
 ## [1.2.1](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v1.2.0...v1.2.1) (2026-03-15)
 
 
