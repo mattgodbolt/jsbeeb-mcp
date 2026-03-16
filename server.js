@@ -392,13 +392,21 @@ server.tool(
     },
     async ({ session_id, cycles, clear }) => {
         const session = requireSession(session_id);
+        session.resetBreakpointHits();
         await session.runFor(cycles);
         const output = session.drainOutput({ clear });
+        const hit = session.hitBreakpoint();
+        const result = { cycles_run: cycles, output };
+        if (hit) {
+            const regs = session.registers();
+            result.breakpoint = hit;
+            result.registers = regs;
+        }
         return {
             content: [
                 {
                     type: "text",
-                    text: JSON.stringify({ cycles_run: cycles, output }),
+                    text: JSON.stringify(result),
                 },
             ],
         };
@@ -707,35 +715,48 @@ server.tool(
 
 server.tool(
     "set_breakpoint",
-    "Set a breakpoint on a memory address. The emulator will stop when the " +
-        "CPU's program counter reaches this address. Use run_for_cycles after " +
-        "setting the breakpoint — it will return early if the breakpoint is hit. " +
-        "Returns the CPU registers at the point of the break.",
+    "Set a persistent breakpoint. The breakpoint stays active across multiple " +
+        "run_for_cycles calls until removed with clear_breakpoint. When a breakpoint " +
+        "fires, run_for_cycles returns early and reports which breakpoint was hit. " +
+        "Types: 'execute' (PC reaches address), 'read' (memory read), 'write' (memory write).",
     {
         session_id: z.string().describe("Session ID from create_machine"),
         address: z.number().min(0).max(65535).describe("Address to break on (0–65535)"),
-        timeout_secs: z.number().default(10).describe("Max emulated seconds to wait for breakpoint"),
+        type: z.enum(["execute", "read", "write"]).default("execute")
+            .describe("Breakpoint type: execute (PC), read (memory read), write (memory write)"),
     },
-    async ({ session_id, address, timeout_secs }) => {
+    async ({ session_id, address, type }) => {
         const session = requireSession(session_id);
-        try {
-            await session.runUntilAddress(address, timeout_secs);
-            const regs = session.registers();
-            return {
-                content: [{
-                    type: "text",
-                    text: `Breakpoint hit at $${address.toString(16).padStart(4, "0")}\n` +
-                        `PC=$${regs.pc.toString(16).padStart(4, "0")} ` +
-                        `A=$${regs.a.toString(16).padStart(2, "0")} ` +
-                        `X=$${regs.x.toString(16).padStart(2, "0")} ` +
-                        `Y=$${regs.y.toString(16).padStart(2, "0")} ` +
-                        `S=$${regs.s.toString(16).padStart(2, "0")} ` +
-                        `P=$${regs.p.toString(16).padStart(2, "0")}`,
-                }],
-            };
-        } catch (e) {
-            return { content: [{ type: "text", text: `Breakpoint not hit within ${timeout_secs}s: ${e.message}` }] };
+        const id = session.addBreakpoint(type, address);
+        return {
+            content: [{
+                type: "text",
+                text: JSON.stringify({
+                    breakpoint_id: id,
+                    type,
+                    address,
+                    addressHex: `0x${address.toString(16).padStart(4, "0")}`,
+                }),
+            }],
+        };
+    },
+);
+
+server.tool(
+    "clear_breakpoint",
+    "Remove a previously set breakpoint by its ID, or pass id=0 to clear all breakpoints.",
+    {
+        session_id: z.string().describe("Session ID from create_machine"),
+        id: z.number().describe("Breakpoint ID to remove (0 = clear all)"),
+    },
+    async ({ session_id, id }) => {
+        const session = requireSession(session_id);
+        if (id === 0) {
+            session.clearBreakpoints();
+            return { content: [{ type: "text", text: "All breakpoints cleared" }] };
         }
+        session.removeBreakpoint(id);
+        return { content: [{ type: "text", text: `Breakpoint ${id} removed` }] };
     },
 );
 
