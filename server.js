@@ -26,6 +26,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { MachineSession } from "jsbeeb/machine-session";
+import { writeFileSync } from "node:fs";
 
 // ---------------------------------------------------------------------------
 // BBC key name → browser keyCode mapping
@@ -392,6 +393,17 @@ server.tool(
     },
     async ({ session_id, cycles, clear }) => {
         const session = requireSession(session_id);
+        // If a breakpoint already fired (e.g. during type_input), report it
+        // immediately without running more cycles.
+        if (session.hitBreakpoint()) {
+            const output = session.drainOutput({ clear });
+            const regs = session.registers();
+            const hit = session.hitBreakpoint();
+            session.resetBreakpointHits();
+            return {
+                content: [{ type: "text", text: JSON.stringify({ cycles_run: 0, output, breakpoint: hit, registers: regs }) }],
+            };
+        }
         session.resetBreakpointHits();
         await session.runFor(cycles);
         const output = session.drainOutput({ clear });
@@ -757,6 +769,64 @@ server.tool(
         }
         session.removeBreakpoint(id);
         return { content: [{ type: "text", text: `Breakpoint ${id} removed` }] };
+    },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: save_memory
+// ---------------------------------------------------------------------------
+
+server.tool(
+    "save_memory",
+    "Save a range of the BBC Micro's memory to a file on the host filesystem. " +
+        "Much faster than multiple read_memory calls for large dumps.",
+    {
+        session_id: z.string().describe("Session ID from create_machine"),
+        address: z.number().min(0).max(65535).describe("Start address (0–65535)"),
+        length: z.number().min(1).max(65536).describe("Number of bytes to save"),
+        path: z.string().describe("Absolute path to write the file to"),
+    },
+    async ({ session_id, address, length, path: filePath }) => {
+        const session = requireSession(session_id);
+        const bytes = new Uint8Array(length);
+        for (let i = 0; i < length; i++) bytes[i] = session._machine.readbyte(address + i);
+        writeFileSync(filePath, bytes);
+        return {
+            content: [{
+                type: "text",
+                text: `Saved ${length} bytes from $${address.toString(16).padStart(4, "0")} to ${filePath}`,
+            }],
+        };
+    },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: disassemble
+// ---------------------------------------------------------------------------
+
+server.tool(
+    "disassemble",
+    "Disassemble 6502 machine code from the BBC Micro's memory. " +
+        "Returns assembly listing with addresses, hex bytes, and mnemonics.",
+    {
+        session_id: z.string().describe("Session ID from create_machine"),
+        address: z.number().min(0).max(65535).describe("Start address (0–65535)"),
+        count: z.number().min(1).max(200).default(20).describe("Number of instructions to disassemble"),
+    },
+    async ({ session_id, address, count }) => {
+        const session = requireSession(session_id);
+        const dis = session._machine.processor.disassembler;
+        const lines = [];
+        let addr = address;
+        for (let i = 0; i < count && addr <= 0xFFFF; i++) {
+            const [text, nextAddr] = dis.disassemble(addr, true);
+            const bytes = [];
+            for (let b = addr; b < nextAddr; b++) bytes.push(session._machine.readbyte(b));
+            const hex = bytes.map(b => b.toString(16).padStart(2, "0")).join(" ");
+            lines.push(`${addr.toString(16).padStart(4, "0").toUpperCase()}  ${hex.padEnd(8)}  ${text}`);
+            addr = nextAddr;
+        }
+        return { content: [{ type: "text", text: lines.join("\n") }] };
     },
 );
 
