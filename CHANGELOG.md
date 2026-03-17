@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v2.0.0...v2.1.0) (2026-03-17)
+
+
+### Features
+
+* Fix breakpoints, add disassembler ([2bd4d81](https://github.com/mattgodbolt/jsbeeb-mcp/commit/2bd4d81418b5e91306cb0e0ad9f4e18f2d93f8b7))
+
 ## [2.0.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v1.2.1...v2.0.0) (2026-03-16)
 
 
