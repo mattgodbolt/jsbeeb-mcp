@@ -133,7 +133,7 @@ For multi-step interaction (debugging, iterative development):
 
 | Tool               | Description                                                    |
 | ------------------ | -------------------------------------------------------------- |
-| `create_machine`   | Boot a BBC Micro (B or Master), returns a `session_id`         |
+| `create_machine`   | Boot a BBC Micro (B or Master), returns a `session_id`; optional `tube` attaches a 65C02 second processor |
 | `destroy_machine`  | Free a session                                                 |
 | `load_basic`       | Tokenise + load BBC BASIC source into PAGE                     |
 | `type_input`       | Type text at the current keyboard prompt (RETURN is automatic) |
