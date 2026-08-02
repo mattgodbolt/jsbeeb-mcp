@@ -136,9 +136,13 @@ server.tool(
             .default("B-DFS1.2")
             .describe("BBC Micro model to emulate"),
         boot_timeout_secs: z.number().default(30).describe("Max seconds of emulated time to wait for the boot prompt"),
+        tube: z
+            .boolean()
+            .default(false)
+            .describe("Attach a 65C02 second processor (Tube co-processor) running at 4MHz"),
     },
-    async ({ model, boot_timeout_secs }) => {
-        const session = new MachineSession(model);
+    async ({ model, boot_timeout_secs, tube }) => {
+        const session = new MachineSession(model, { tube });
         await session.initialise();
         const bootOutput = await session.boot(boot_timeout_secs);
         const id = newSessionId();
