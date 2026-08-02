@@ -139,7 +139,10 @@ server.tool(
         tube: z
             .boolean()
             .default(false)
-            .describe("Attach a 65C02 second processor (Tube co-processor) running at 4MHz"),
+            .describe(
+                "Attach the second processor this model was sold with: a 3MHz 65C02 for a BBC B, " +
+                    "or the 4MHz 65C102 Turbo board for a Master",
+            ),
     },
     async ({ model, boot_timeout_secs, tube }) => {
         const session = new MachineSession(model, { tube });
