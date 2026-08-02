@@ -38,7 +38,8 @@ jobs:
           ref: ${{ github.event.inputs.tag_name || needs.release-please.outputs.tag_name }}
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          # Keep in step with engines.node in package.json; see ci.yml.
+          node-version: ">=24.15.0 <25"
           cache: npm
           registry-url: "https://registry.npmjs.org"
       - run: npm ci
