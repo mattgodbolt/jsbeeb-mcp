@@ -1,5 +1,23 @@
 # Changelog
 
+## [3.0.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v2.1.0...v3.0.0) (2026-08-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* requires Node >=24.15.0, up from >=22, to match the engine declared by jsbeeb 1.15.0.
+
+### Features
+
+* add tube option to create_machine (65C02 second processor) ([#10](https://github.com/mattgodbolt/jsbeeb-mcp/issues/10)) ([3784b2a](https://github.com/mattgodbolt/jsbeeb-mcp/commit/3784b2a277354c85ac271236cfa56a27c6fc9253))
+* update to jsbeeb 1.15, add CI and dependabot ([#11](https://github.com/mattgodbolt/jsbeeb-mcp/issues/11)) ([3dfbe8b](https://github.com/mattgodbolt/jsbeeb-mcp/commit/3dfbe8bb40483447d291936a4a7cabefb755b126))
+
+
+### Bug Fixes
+
+* **deps:** bump zod in the production-dependencies group ([#13](https://github.com/mattgodbolt/jsbeeb-mcp/issues/13)) ([5f0a635](https://github.com/mattgodbolt/jsbeeb-mcp/commit/5f0a6352b5f241af6a342c40df1a194597d1d663))
+* describe the tube option's actual clock speed ([#14](https://github.com/mattgodbolt/jsbeeb-mcp/issues/14)) ([639e6b7](https://github.com/mattgodbolt/jsbeeb-mcp/commit/639e6b768aeb1ac04a1aec7ec4ed92d1bce3545d))
+
 ## [2.1.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v2.0.0...v2.1.0) (2026-03-17)
 
 
