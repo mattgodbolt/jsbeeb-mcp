@@ -1,0 +1,41 @@
+version: 2
+
+updates:
+  # Runtime dependencies ship to npm consumers, so a bump warrants a release:
+  # "fix:" gets release-please to cut a patch. Dev-only bumps stay "chore:".
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    versioning-strategy: increase
+    commit-message:
+      prefix: fix
+      prefix-development: chore
+      include: scope
+    groups:
+      # jsbeeb moves fast and is the whole point of this server — keep it on
+      # its own PR so a regression is easy to bisect and revert.
+      production-dependencies:
+        applies-to: version-updates
+        dependency-type: production
+        exclude-patterns:
+          - jsbeeb
+      security-updates:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      github-actions:
+        patterns:
+          - "*"

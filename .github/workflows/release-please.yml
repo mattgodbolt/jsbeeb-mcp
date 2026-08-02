@@ -23,7 +23,7 @@ jobs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         id: release
         with:
           release-type: node
@@ -33,13 +33,15 @@ jobs:
     runs-on: ubuntu-24.04
     if: ${{ needs.release-please.outputs.release_created || github.event_name == 'workflow_dispatch' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.inputs.tag_name || needs.release-please.outputs.tag_name }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          # Keep in step with engines.node in package.json; see ci.yml.
+          node-version: ">=24.15.0 <25"
           cache: npm
           registry-url: "https://registry.npmjs.org"
       - run: npm ci
+      - run: npm test
       - run: npm publish --provenance --access public

@@ -1,5 +1,6 @@
 node_modules/
 examples/*.png
+mcp-test-screenshot.png
 *.ssd
 !examples/hello.ssd
 *.dsd

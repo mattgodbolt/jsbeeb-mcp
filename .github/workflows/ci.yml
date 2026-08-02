@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          # Range rather than bare "24": setup-node will reuse a toolcache
+          # version that merely matches the spec, so the engines floor from
+          # package.json has to be stated here to be enforced.
+          node-version: ">=24.15.0 <25"
+          cache: npm
+      - run: npm ci
+      - run: npm test

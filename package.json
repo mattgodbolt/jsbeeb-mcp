@@ -16,12 +16,13 @@
     "test": "node test-mcp-client.js"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=24.15.0"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.26.0",
-    "jsbeeb": "^1.6.0",
-    "sharp": "^0.34.5"
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "jsbeeb": "^1.15.0",
+    "sharp": "^0.35.3",
+    "zod": "^4.3.6"
   },
   "repository": {
     "type": "git",
