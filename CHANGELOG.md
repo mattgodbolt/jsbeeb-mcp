@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.1.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v3.0.0...v3.1.0) (2026-08-14)
+
+
+### Features
+
+* add run_frames, and report the frame counter ([#16](https://github.com/mattgodbolt/jsbeeb-mcp/issues/16)) ([9c980f2](https://github.com/mattgodbolt/jsbeeb-mcp/commit/9c980f249a51af688819bf78c7893389495e84ee))
+
+
+### Bug Fixes
+
+* update jsbeeb to 1.17.1 ([121d8fc](https://github.com/mattgodbolt/jsbeeb-mcp/commit/121d8fc9760461f386b9a0db72ec0ab396c24e9a))
+
 ## [3.0.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v2.1.0...v3.0.0) (2026-08-02)
 
 
