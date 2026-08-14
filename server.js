@@ -280,9 +280,10 @@ server.tool(
 
 server.tool(
     "screenshot",
-    "Capture the current BBC Micro screen as a PNG image. " +
-        "Returns a base64-encoded PNG of the full 1024×625 emulated display. " +
-        "Tip: call run_until_prompt first to let the screen settle.",
+    "Capture the last fully-painted BBC Micro frame as a PNG image. " +
+        "Returns a base64-encoded PNG of the full 1024×625 emulated display, plus the frame counter " +
+        "so you can tell a genuinely new frame from the same one captured twice. " +
+        "Tip: call run_until_prompt first to let the screen settle, or run_frames to step to the next frame.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
         active_only: z
@@ -295,6 +296,10 @@ server.tool(
         const png = active_only ? await session.screenshotActive() : await session.screenshot();
         return {
             content: [
+                {
+                    type: "text",
+                    text: JSON.stringify({ frame_count: session.frameCount }),
+                },
                 {
                     type: "image",
                     data: png.toString("base64"),
@@ -370,12 +375,24 @@ server.tool(
 
 server.tool(
     "read_registers",
-    "Read the current 6502 CPU register state (PC, A, X, Y, stack pointer, processor status).",
+    "Read the current 6502 CPU register state (PC, A, X, Y, stack pointer, processor status), " +
+        "along with the frame and cycle counters.",
     { session_id: z.string().describe("Session ID from create_machine") },
     async ({ session_id }) => {
         const session = requireSession(session_id);
         const regs = session.registers();
-        return { content: [{ type: "text", text: JSON.stringify(regs) }] };
+        return {
+            content: [
+                {
+                    type: "text",
+                    text: JSON.stringify({
+                        ...regs,
+                        frame_count: session.frameCount,
+                        elapsed_cycles: session.elapsedCycles,
+                    }),
+                },
+            ],
+        };
     },
 );
 
@@ -387,6 +404,8 @@ server.tool(
     "run_for_cycles",
     "Run the emulator for an exact number of 2MHz CPU cycles. " +
         "Useful for precise timing, or just to advance the clock a bit between interactions. " +
+        "Do not use this to step frames: a frame is 40000 cycles with interlace on (the default) " +
+        "but 39936 with it off, so a fixed step drifts against the display. Use run_frames instead. " +
         "Returns accumulated text output. By default the output buffer is cleared after returning — " +
         "pass clear=false when using this as an intermediate step (e.g. between key_down and key_up) " +
         "to avoid losing output that you want to collect later via run_until_prompt.",
@@ -429,6 +448,69 @@ server.tool(
                 },
             ],
         };
+    },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: run_frames
+// ---------------------------------------------------------------------------
+
+server.tool(
+    "run_frames",
+    "Run the emulator until it has painted another `count` frames, stopping on the paint itself. " +
+        "Use this rather than run_for_cycles for anything frame-oriented: capturing consecutive " +
+        "screenshots to see flicker or tearing, or stepping an animation. One frame is exactly one " +
+        "new screenshot. Reports frames_run, cycles_run, and frame_count (which only ever climbs, " +
+        "so compare it across calls to confirm the screen really did move on). " +
+        "completed is false if the machine stopped painting or a breakpoint fired first.",
+    {
+        session_id: z.string().describe("Session ID from create_machine"),
+        count: z.number().int().min(1).max(10000).default(1).describe("Number of frames to advance"),
+        clear: z
+            .boolean()
+            .default(true)
+            .describe("If true (default), clear the output buffer after returning it. Pass false to peek."),
+    },
+    async ({ session_id, count, clear }) => {
+        const session = requireSession(session_id);
+        if (session.hitBreakpoint()) {
+            const output = session.drainOutput({ clear });
+            const regs = session.registers();
+            const hit = session.hitBreakpoint();
+            session.resetBreakpointHits();
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: JSON.stringify({
+                            frames_run: 0,
+                            cycles_run: 0,
+                            frame_count: session.frameCount,
+                            completed: false,
+                            output,
+                            breakpoint: hit,
+                            registers: regs,
+                        }),
+                    },
+                ],
+            };
+        }
+        session.resetBreakpointHits();
+        const { framesRun, cyclesRun, completed } = await session.runFrames(count);
+        const output = session.drainOutput({ clear });
+        const hit = session.hitBreakpoint();
+        const result = {
+            frames_run: framesRun,
+            cycles_run: cyclesRun,
+            frame_count: session.frameCount,
+            completed,
+            output,
+        };
+        if (hit) {
+            result.breakpoint = hit;
+            result.registers = session.registers();
+        }
+        return { content: [{ type: "text", text: JSON.stringify(result) }] };
     },
 );
 

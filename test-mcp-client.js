@@ -77,6 +77,7 @@ async function main() {
     ok("has reset", toolNames.includes("reset"));
     ok("has boot_disc", toolNames.includes("boot_disc"));
     ok("has run_disc", toolNames.includes("run_disc"));
+    ok("has run_frames", toolNames.includes("run_frames"));
 
     // --- One-shot run_basic ---
     console.log("\n--- run_basic (one-shot) ---");
@@ -146,6 +147,28 @@ async function main() {
     const ssImg = imageContent(ssResult);
     ok("screenshot returns image", !!ssImg);
     ok("screenshot is base64 PNG", ssImg?.data?.length > 100);
+    const ssFrame = JSON.parse(textContent(ssResult)).frame_count;
+    ok("screenshot reports a frame count", typeof ssFrame === "number");
+
+    // run_frames — the first step lands on a frame boundary (it collects
+    // whatever was left of the frame in progress), so measure from the second.
+    const alignResult = await callTool(client, "run_frames", { session_id });
+    const baseFrame = JSON.parse(textContent(alignResult)).frame_count;
+    ok("run_frames picks up where screenshot left off", baseFrame === ssFrame + 1);
+
+    const framesResult = await callTool(client, "run_frames", { session_id, count: 3 });
+    const frames = JSON.parse(textContent(framesResult));
+    console.log("run_frames:", JSON.stringify({ ...frames, output: undefined }));
+    ok("run_frames runs the frames asked for", frames.frames_run === 3 && frames.completed === true);
+    ok("run_frames steps whole frames", Math.abs(frames.cycles_run - 3 * 40000) <= 16);
+    ok("run_frames advances the frame count", frames.frame_count === baseFrame + 3);
+    const ssAfter = await callTool(client, "screenshot", { session_id, active_only: true });
+    ok("screenshot agrees with run_frames", JSON.parse(textContent(ssAfter)).frame_count === frames.frame_count);
+
+    // read_registers carries the same counter
+    const regsWithFrame = JSON.parse(textContent(await callTool(client, "read_registers", { session_id })));
+    ok("read_registers reports the frame count", regsWithFrame.frame_count === frames.frame_count);
+    ok("read_registers reports elapsed cycles", regsWithFrame.elapsed_cycles > 0);
 
     // load_disc
     const discPath = resolve(__dirname, "examples/hello.ssd");

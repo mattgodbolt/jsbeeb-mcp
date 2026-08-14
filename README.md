@@ -138,11 +138,12 @@ For multi-step interaction (debugging, iterative development):
 | `load_basic`       | Tokenise + load BBC BASIC source into PAGE                     |
 | `type_input`       | Type text at the current keyboard prompt (RETURN is automatic) |
 | `run_until_prompt` | Run until BASIC/OS prompt, return captured screen text         |
-| `screenshot`       | Capture the current screen as a PNG image                      |
+| `screenshot`       | Capture the last fully-painted frame as a PNG image, plus the frame counter |
 | `read_memory`      | Read bytes from the memory map (with hex dump)                 |
 | `write_memory`     | Poke bytes into memory                                         |
-| `read_registers`   | Get 6502 CPU registers (PC, A, X, Y, S, P)                    |
+| `read_registers`   | Get 6502 CPU registers (PC, A, X, Y, S, P), the frame counter and elapsed cycles |
 | `run_for_cycles`   | Run exactly N 2MHz CPU cycles (drains output by default — use `clear: false` to peek without consuming) |
+| `run_frames`       | Advance N painted frames — use this, not `run_for_cycles`, to step the display |
 | `load_disc`        | Load an `.ssd`/`.dsd` disc image into drive 0                  |
 | `key_down`         | Press and hold a key (e.g. `SHIFT`, `A`, `RETURN`, `F0`)      |
 | `key_up`           | Release a previously held key                                  |
@@ -199,4 +200,8 @@ with a real `Video` instance (full video chip into a 1024×625 RGBA
 framebuffer), VDU text capture, and screenshot support via `sharp`.
 
 Framebuffer snapshots are taken inside the `paint_ext` vsync callback (before
-the buffer is cleared), ensuring screenshots always show a complete frame.
+the buffer is cleared), ensuring screenshots always show a complete frame. The
+same callback drives `run_frames`, which halts the CPU on the paint itself
+rather than after a cycle count — a frame is 40000 cycles with interlace on but
+39936 with it off, so a fixed cycle step drifts against the display and makes a
+sprite caught mid-redraw look like a bug in the program under test.
