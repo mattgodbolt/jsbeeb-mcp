@@ -149,6 +149,32 @@ For multi-step interaction (debugging, iterative development):
 | `key_up`           | Release a previously held key                                  |
 | `reset`            | Reset the machine; with `autoboot: true`, holds SHIFT during reset (SHIFT+BREAK) |
 | `boot_disc`        | Load a disc image and autoboot it (SHIFT+BREAK)                |
+| `save_state`       | Snapshot the whole machine server-side, returns a `state_id`   |
+| `restore_state`    | Put a session back to a saved state (same model only)          |
+| `list_states`      | List saved states, newest first                                |
+| `delete_state`     | Discard a saved state and free its memory                      |
+
+### Checkpointing with save_state
+
+Booting is the slow part of a session, so snapshot a prepared machine once and
+restore it between attempts rather than creating a new one each time:
+
+```
+create_machine → (load disc, set things up) → save_state → { state_id }
+  ↳ try something → restore_state → try something else → restore_state → ...
+```
+
+The snapshot covers CPU, RAM, sideways RAM, video, sound chip, discs and tube.
+Memory, registers and the cycle count rewind on restore; breakpoints and the
+frame counter deliberately carry on.
+
+Snapshots stay on the server and only their IDs cross the connection, so they
+are cheap to pass around but must be freed with `delete_state` when finished —
+they outlive the session they came from. The server holds at most 100 of them
+(roughly 0.4MB each) and refuses a further `save_state` rather than evicting one
+you may be about to restore. That is also what lets one state seed
+several machines: `restore_state` accepts any session of the same model, so a
+single starting point can be run forward in parallel.
 
 ### Composable keyboard control
 
@@ -175,6 +201,7 @@ Or use `reset` with `autoboot: true` / `boot_disc` / `run_disc` for common cases
 - ✅ CPU register inspection
 - ✅ BBC B (8271 and 1770) and Master 128 models, booting DFS, ADFS or ANFS
 - ✅ Multiple concurrent sessions
+- ✅ Whole-machine state snapshots (checkpoint once, restore between attempts)
 - ✅ Disc image loading and autoboot (`.ssd`/`.dsd`)
 - ✅ Low-level keyboard control (key_down/key_up)
 

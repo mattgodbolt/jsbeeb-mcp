@@ -259,6 +259,59 @@ async function main() {
     ok("boot_disc ran disc", bootDiscOutput.screenText.includes("HELLO FROM BEEBASM"));
     await callTool(client, "destroy_machine", { session_id: sid3 });
 
+    // --- save_state / restore_state ---
+    console.log("\n--- save_state / restore_state ---");
+    const createResult4 = await callTool(client, "create_machine", { model: "B-DFS1.2" });
+    const { session_id: sid4 } = JSON.parse(textContent(createResult4));
+
+    async function runBasicLine(session_id, line) {
+        await callTool(client, "type_input", { session_id, text: line });
+        return JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id }))).screenText;
+    }
+
+    await runBasicLine(sid4, "A%=42");
+    const saveResult = await callTool(client, "save_state", { session_id: sid4, label: "A% is 42" });
+    const { state_id } = JSON.parse(textContent(saveResult));
+    ok("save_state returns a state_id", !!state_id);
+
+    await runBasicLine(sid4, "A%=99");
+    ok("machine moved on after the save", (await runBasicLine(sid4, "PRINT A%")).includes("99"));
+
+    await callTool(client, "restore_state", { session_id: sid4, state_id });
+    const restored = await runBasicLine(sid4, "PRINT A%");
+    console.log("After restore:", JSON.stringify(restored));
+    ok("restore_state rewinds memory", restored.includes("42") && !restored.includes("99"));
+
+    const listed = JSON.parse(textContent(await callTool(client, "list_states", { session_id: sid4 })));
+    ok("list_states finds the state", listed.states.some((s) => s.state_id === state_id));
+    ok("list_states keeps the label", listed.states[0].label === "A% is 42");
+
+    // A state can seed a second machine, so long as it is the same model.
+    const createResult5 = await callTool(client, "create_machine", { model: "B-DFS1.2" });
+    const { session_id: sid5 } = JSON.parse(textContent(createResult5));
+    await callTool(client, "restore_state", { session_id: sid5, state_id });
+    ok("state restores into another session", (await runBasicLine(sid5, "PRINT A%")).includes("42"));
+
+    const masterResult = await callTool(client, "create_machine", { model: "Master" });
+    const { session_id: masterSid } = JSON.parse(textContent(masterResult));
+    const crossModel = await client.callTool({
+        name: "restore_state",
+        arguments: { session_id: masterSid, state_id },
+    });
+    ok("restoring across models is refused", crossModel.isError === true);
+
+    const overLongLabel = await client.callTool({
+        name: "save_state",
+        arguments: { session_id: sid4, label: "x".repeat(500) },
+    });
+    ok("save_state rejects an over-long label", overLongLabel.isError === true);
+
+    await callTool(client, "delete_state", { state_id });
+    const afterDelete = JSON.parse(textContent(await callTool(client, "list_states", {})));
+    ok("delete_state removes it", !afterDelete.states.some((s) => s.state_id === state_id));
+
+    for (const id of [sid4, sid5, masterSid]) await callTool(client, "destroy_machine", { session_id: id });
+
     // --- run_disc (one-shot) ---
     console.log("\n--- run_disc (one-shot) ---");
     const runDiscResult = await callTool(client, "run_disc", {

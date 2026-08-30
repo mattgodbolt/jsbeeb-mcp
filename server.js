@@ -103,6 +103,17 @@ const OneSec = 2_000_000;
 
 const sessions = new Map(); // sessionId → MachineSession
 
+// Snapshots are big (RAM plus every ROM bank), so they stay here and only their
+// IDs cross the wire.  They outlive the session they came from, which is what
+// lets one state seed several machines.
+const states = new Map(); // stateId → { model, label, saved_from, saved_at, snapshot }
+
+// A snapshot is about 0.4MB, so this caps the store around 40MB: far more than
+// any real checkpointing needs, and enough to stop a runaway caller filling the
+// heap and taking every live session down with it.
+const MaxSavedStates = 100;
+const MaxStateLabelLength = 200;
+
 function requireSession(sessionId) {
     const s = sessions.get(sessionId);
     if (!s) throw new Error(`No session with id "${sessionId}". Call create_machine first.`);
@@ -861,6 +872,127 @@ server.tool(
         }
         session.removeBreakpoint(id);
         return { content: [{ type: "text", text: `Breakpoint ${id} removed` }] };
+    },
+);
+
+// ---------------------------------------------------------------------------
+// State snapshot tools
+// ---------------------------------------------------------------------------
+
+server.tool(
+    "save_state",
+    "Snapshot the whole machine (CPU, RAM, sideways RAM, video, sound chip, " +
+        "discs, tube) and keep it server-side under a state ID. Booting is the " +
+        "slow part of a session, so snapshotting once and restoring between " +
+        "attempts is much cheaper than creating a machine for each one. The " +
+        "snapshot itself never crosses this connection, only its ID.",
+    {
+        session_id: z.string().describe("Session ID from create_machine"),
+        label: z
+            .string()
+            .max(MaxStateLabelLength)
+            .default("")
+            .describe("Optional note to identify this state in list_states"),
+    },
+    async ({ session_id, label }) => {
+        const session = requireSession(session_id);
+        // Refuse rather than evicting: a state is kept because something means to
+        // restore it, so dropping the oldest to make room would break the caller
+        // that is still holding its ID.
+        if (states.size >= MaxSavedStates) {
+            throw new Error(
+                `Already holding ${states.size} saved states (the limit). ` +
+                    "Free one with delete_state; list_states shows what is held.",
+            );
+        }
+        const state_id = crypto.randomUUID();
+        states.set(state_id, {
+            model: session.modelName,
+            label,
+            saved_from: session_id,
+            saved_at: new Date().toISOString(),
+            snapshot: session.snapshot(),
+        });
+        return {
+            content: [{
+                type: "text",
+                text: JSON.stringify({ state_id, model: session.modelName, label }),
+            }],
+        };
+    },
+);
+
+server.tool(
+    "restore_state",
+    "Put a session back to a state saved by save_state. Memory, registers and " +
+        "the cycle count rewind; breakpoints and the frame counter carry on. The " +
+        "target session need not be the one the state was saved from, so a state " +
+        "can be restored into several machines to run from the same start point, " +
+        "but it must be the same model.",
+    {
+        session_id: z.string().describe("Session ID to restore into"),
+        state_id: z.string().describe("State ID from save_state"),
+    },
+    async ({ session_id, state_id }) => {
+        const session = requireSession(session_id);
+        const saved = states.get(state_id);
+        if (!saved) throw new Error(`No state with id "${state_id}". Call save_state first.`);
+        // ROM layout and CPU type differ per model, so a state from one would
+        // restore as nonsense into another.
+        if (saved.model !== session.modelName) {
+            throw new Error(
+                `State "${state_id}" was saved from a ${saved.model}, ` +
+                    `but session "${session_id}" is a ${session.modelName}.`,
+            );
+        }
+        session.restore(saved.snapshot);
+        const regs = session.registers();
+        return {
+            content: [{
+                type: "text",
+                text: JSON.stringify({
+                    state_id,
+                    model: saved.model,
+                    label: saved.label,
+                    pcHex: `0x${regs.pc.toString(16).padStart(4, "0")}`,
+                    frame_count: session.frameCount,
+                }),
+            }],
+        };
+    },
+);
+
+server.tool(
+    "list_states",
+    "List the states held by save_state, newest first.",
+    {
+        session_id: z.string().default("").describe("Only list states saved from this session (default: all)"),
+    },
+    async ({ session_id }) => {
+        const listed = [...states.entries()]
+            .filter(([, saved]) => !session_id || saved.saved_from === session_id)
+            .map(([state_id, saved]) => ({
+                state_id,
+                model: saved.model,
+                label: saved.label,
+                saved_from: saved.saved_from,
+                saved_at: saved.saved_at,
+            }))
+            .sort((a, b) => b.saved_at.localeCompare(a.saved_at));
+        return { content: [{ type: "text", text: JSON.stringify({ count: listed.length, states: listed }) }] };
+    },
+);
+
+server.tool(
+    "delete_state",
+    "Discard a saved state and free the memory it holds. States outlive the " +
+        "session they came from, so they are only freed when deleted.",
+    {
+        state_id: z.string().describe("State ID from save_state"),
+    },
+    async ({ state_id }) => {
+        if (!states.delete(state_id)) throw new Error(`No state with id "${state_id}".`);
+        return { content: [{ type: "text", text: `State ${state_id} deleted` }] };
     },
 );
 
