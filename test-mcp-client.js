@@ -7,6 +7,7 @@
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { findModel } from "jsbeeb/src/models.js";
 import { writeFileSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -78,6 +79,14 @@ async function main() {
     ok("has boot_disc", toolNames.includes("boot_disc"));
     ok("has run_disc", toolNames.includes("run_disc"));
     ok("has run_frames", toolNames.includes("run_frames"));
+
+    // Every model create_machine offers must be one jsbeeb actually knows, or the
+    // client is invited to pick a name that fails deep inside MachineSession.
+    const advertisedModels = tools.find((t) => t.name === "create_machine")?.inputSchema?.properties?.model?.enum ?? [];
+    ok("create_machine advertises models", advertisedModels.length > 0);
+    const unknownModels = advertisedModels.filter((m) => findModel(m) === null);
+    const modelLabel = unknownModels.length ? `unknown: ${unknownModels.join(", ")}` : "none unknown";
+    ok(`all ${advertisedModels.length} advertised models exist (${modelLabel})`, unknownModels.length === 0);
 
     // --- One-shot run_basic ---
     console.log("\n--- run_basic (one-shot) ---");

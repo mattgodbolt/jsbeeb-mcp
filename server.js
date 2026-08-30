@@ -132,9 +132,12 @@ server.tool(
         "The machine runs until the BASIC prompt before this call returns.",
     {
         model: z
-            .enum(["B-DFS1.2", "B-DFS2.26", "Master", "Master-MOS3.20"])
+            .enum(["B-DFS1.2", "B-DFS0.9", "B1770", "B1770A", "Master", "MasterADFS", "MasterANFS"])
             .default("B-DFS1.2")
-            .describe("BBC Micro model to emulate"),
+            .describe(
+                "BBC Micro model to emulate: a BBC B with the 8271 floppy controller and DFS 1.2 or 0.9, " +
+                    "a BBC B with the 1770 controller booting DFS or ADFS, or a Master 128 booting DFS, ADFS or ANFS",
+            ),
         boot_timeout_secs: z.number().default(30).describe("Max seconds of emulated time to wait for the boot prompt"),
         tube: z
             .boolean()
