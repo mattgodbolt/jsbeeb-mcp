@@ -108,6 +108,12 @@ const sessions = new Map(); // sessionId → MachineSession
 // lets one state seed several machines.
 const states = new Map(); // stateId → { model, label, saved_from, saved_at, snapshot }
 
+// A snapshot is about 0.4MB, so this caps the store around 40MB: far more than
+// any real checkpointing needs, and enough to stop a runaway caller filling the
+// heap and taking every live session down with it.
+const MaxSavedStates = 100;
+const MaxStateLabelLength = 200;
+
 function requireSession(sessionId) {
     const s = sessions.get(sessionId);
     if (!s) throw new Error(`No session with id "${sessionId}". Call create_machine first.`);
@@ -882,10 +888,23 @@ server.tool(
         "snapshot itself never crosses this connection, only its ID.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
-        label: z.string().default("").describe("Optional note to identify this state in list_states"),
+        label: z
+            .string()
+            .max(MaxStateLabelLength)
+            .default("")
+            .describe("Optional note to identify this state in list_states"),
     },
     async ({ session_id, label }) => {
         const session = requireSession(session_id);
+        // Refuse rather than evicting: a state is kept because something means to
+        // restore it, so dropping the oldest to make room would break the caller
+        // that is still holding its ID.
+        if (states.size >= MaxSavedStates) {
+            throw new Error(
+                `Already holding ${states.size} saved states (the limit). ` +
+                    "Free one with delete_state; list_states shows what is held.",
+            );
+        }
         const state_id = crypto.randomUUID();
         states.set(state_id, {
             model: session.modelName,

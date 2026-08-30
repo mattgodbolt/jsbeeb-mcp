@@ -300,6 +300,12 @@ async function main() {
     });
     ok("restoring across models is refused", crossModel.isError === true);
 
+    const overLongLabel = await client.callTool({
+        name: "save_state",
+        arguments: { session_id: sid4, label: "x".repeat(500) },
+    });
+    ok("save_state rejects an over-long label", overLongLabel.isError === true);
+
     await callTool(client, "delete_state", { state_id });
     const afterDelete = JSON.parse(textContent(await callTool(client, "list_states", {})));
     ok("delete_state removes it", !afterDelete.states.some((s) => s.state_id === state_id));

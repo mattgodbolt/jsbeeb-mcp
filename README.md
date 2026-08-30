@@ -170,7 +170,9 @@ frame counter deliberately carry on.
 
 Snapshots stay on the server and only their IDs cross the connection, so they
 are cheap to pass around but must be freed with `delete_state` when finished —
-they outlive the session they came from. That is also what lets one state seed
+they outlive the session they came from. The server holds at most 100 of them
+(roughly 0.4MB each) and refuses a further `save_state` rather than evicting one
+you may be about to restore. That is also what lets one state seed
 several machines: `restore_state` accepts any session of the same model, so a
 single starting point can be run forward in parallel.
 
