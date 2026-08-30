@@ -133,7 +133,7 @@ For multi-step interaction (debugging, iterative development):
 
 | Tool               | Description                                                    |
 | ------------------ | -------------------------------------------------------------- |
-| `create_machine`   | Boot a BBC Micro (B or Master), returns a `session_id`; optional `tube` attaches a 65C02 second processor |
+| `create_machine`   | Boot a BBC Micro (B or Master, DFS/ADFS/ANFS), returns a `session_id`; optional `tube` attaches a 65C02 second processor |
 | `destroy_machine`  | Free a session                                                 |
 | `load_basic`       | Tokenise + load BBC BASIC source into PAGE                     |
 | `type_input`       | Type text at the current keyboard prompt (RETURN is automatic) |
@@ -173,7 +173,7 @@ Or use `reset` with `autoboot: true` / `boot_disc` / `run_disc` for common cases
 - ✅ Screenshots (real Video chip output → PNG via `sharp`)
 - ✅ Memory read/write
 - ✅ CPU register inspection
-- ✅ BBC B and Master models
+- ✅ BBC B (8271 and 1770) and Master 128 models, booting DFS, ADFS or ANFS
 - ✅ Multiple concurrent sessions
 - ✅ Disc image loading and autoboot (`.ssd`/`.dsd`)
 - ✅ Low-level keyboard control (key_down/key_up)
