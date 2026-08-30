@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.2.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v3.1.0...v3.2.0) (2026-08-30)
+
+
+### Features
+
+* add save_state and restore_state ([#21](https://github.com/mattgodbolt/jsbeeb-mcp/issues/21)) ([7371696](https://github.com/mattgodbolt/jsbeeb-mcp/commit/7371696cafc10b51d3b48372a479487cd55293d3))
+
+
+### Bug Fixes
+
+* update jsbeeb to 1.21.0, and only offer models jsbeeb actually has ([#19](https://github.com/mattgodbolt/jsbeeb-mcp/issues/19)) ([629acb6](https://github.com/mattgodbolt/jsbeeb-mcp/commit/629acb6e69967bd315267a2cf46e81be624bd265))
+
 ## [3.1.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v3.0.0...v3.1.0) (2026-08-14)
 
 
