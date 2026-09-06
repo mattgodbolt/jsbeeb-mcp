@@ -325,6 +325,17 @@ async function main() {
 
     for (const id of [sid4, sid5, masterSid]) await callTool(client, "destroy_machine", { session_id: id });
 
+    // --- Atom ---
+    console.log("\n--- Atom ---");
+    const atomResult = await callTool(client, "create_machine", { model: "Atom" });
+    const { session_id: atomSid, boot_output: atomBoot } = JSON.parse(textContent(atomResult));
+    ok("Atom boots to its prompt", atomBoot.screenText.includes("ACORN ATOM"));
+    await callTool(client, "type_input", { session_id: atomSid, text: "PRINT 6*7" });
+    const atomRun = JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id: atomSid })));
+    console.log("Atom output:", JSON.stringify(atomRun.screenText));
+    ok("Atom types and runs to its prompt", atomRun.screenText.includes("42"));
+    await callTool(client, "destroy_machine", { session_id: atomSid });
+
     // --- run_disc (one-shot) ---
     console.log("\n--- run_disc (one-shot) ---");
     const runDiscResult = await callTool(client, "run_disc", {

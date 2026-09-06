@@ -2,7 +2,7 @@
 
 An [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server that
 exposes a headless [BBC Micro emulator](https://github.com/mattgodbolt/jsbeeb)
-to AI assistants (Claude, Cursor, etc.).
+(and its Acorn Atom) to AI assistants (Claude, Cursor, etc.).
 
 Write a BASIC program, run it, get the text output and a screenshot — all
 without opening a browser.
@@ -145,7 +145,7 @@ For multi-step interaction (debugging, iterative development):
 
 | Tool               | Description                                                    |
 | ------------------ | -------------------------------------------------------------- |
-| `create_machine`   | Boot a BBC Micro (B or Master, DFS/ADFS/ANFS), returns a `session_id`; optional `tube` attaches a 65C02 second processor |
+| `create_machine`   | Boot any machine jsbeeb has (BBC B, Master 128, Acorn Atom), returns a `session_id`; optional `tube` attaches a 65C02 second processor |
 | `destroy_machine`  | Free a session                                                 |
 | `load_basic`       | Tokenise + load BBC BASIC source into PAGE                     |
 | `type_input`       | Type text at the current keyboard prompt (RETURN is automatic) |
@@ -154,7 +154,7 @@ For multi-step interaction (debugging, iterative development):
 | `read_memory`      | Read bytes from the memory map (with hex dump)                 |
 | `write_memory`     | Poke bytes into memory                                         |
 | `read_registers`   | Get 6502 CPU registers (PC, A, X, Y, S, P), the frame counter and elapsed cycles |
-| `run_for_cycles`   | Run exactly N 2MHz CPU cycles (drains output by default — use `clear: false` to peek without consuming) |
+| `run_for_cycles`   | Run exactly N CPU cycles (drains output by default — use `clear: false` to peek without consuming) |
 | `run_frames`       | Advance N painted frames — use this, not `run_for_cycles`, to step the display |
 | `load_disc`        | Put a disc in drive 0 or 1, from a file, an archive or a URL   |
 | `key_down`         | Press and hold a key (e.g. `SHIFT`, `A`, `RETURN`, `F0`)      |
@@ -211,7 +211,7 @@ Or use `reset` with `autoboot: true` / `boot_disc` / `run_disc` for common cases
 - ✅ Screenshots (real Video chip output → PNG via `sharp`)
 - ✅ Memory read/write
 - ✅ CPU register inspection
-- ✅ BBC B (8271 and 1770) and Master 128 models, booting DFS, ADFS or ANFS
+- ✅ BBC B (8271 and 1770) and Master 128 models, booting DFS, ADFS or ANFS, and the Acorn Atom
 - ✅ Multiple concurrent sessions
 - ✅ Whole-machine state snapshots (checkpoint once, restore between attempts)
 - ✅ Disc image loading and autoboot: `.ssd`/`.dsd`/`.adf` files and zips, discs from the
