@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.3.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v3.2.0...v3.3.0) (2026-09-06)
+
+
+### Features
+
+* load discs from the archives, by URL and into either drive, on jsbeeb 1.24 ([#22](https://github.com/mattgodbolt/jsbeeb-mcp/issues/22)) ([67a83f4](https://github.com/mattgodbolt/jsbeeb-mcp/commit/67a83f432cf259d01c542059ee67c5f264fddfed))
+* offer the Acorn Atom in create_machine, run_disc and run_basic ([#24](https://github.com/mattgodbolt/jsbeeb-mcp/issues/24)) ([4cff3eb](https://github.com/mattgodbolt/jsbeeb-mcp/commit/4cff3eb2bd2122405c699f7b9c26764dd57128a7))
+
 ## [3.2.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v3.1.0...v3.2.0) (2026-08-30)
 
 
