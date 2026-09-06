@@ -11,7 +11,7 @@
  * by adding it to mcp_servers in the client config.
  *
  * Capabilities:
- *   - Boot a BBC B, BBC Master or Acorn Atom
+ *   - Boot any machine jsbeeb emulates (BBC B, BBC Master, Acorn Atom)
  *   - Load and run BBC BASIC programs
  *   - Type at the keyboard
  *   - Capture text output
@@ -179,8 +179,8 @@ const server = new McpServer({
 
 server.tool(
     "create_machine",
-    "Boot an emulated machine (a BBC B, a BBC Master 128 or an Acorn Atom) and return a session ID " +
-        "for use with all other tools. The machine runs until the BASIC prompt before this call returns.",
+    "Boot one of the machines jsbeeb emulates and return a session ID for use with all other tools. " +
+        "The machine runs until the BASIC prompt before this call returns.",
     {
         model: z.enum(ModelNames).default("B-DFS1.2").describe(ModelDescription),
         boot_timeout_secs: z.number().default(30).describe("Max seconds of emulated time to wait for the boot prompt"),

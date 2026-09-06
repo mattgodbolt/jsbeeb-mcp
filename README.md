@@ -1,8 +1,8 @@
 # jsbeeb-mcp
 
 An [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server that
-exposes a headless [BBC Micro emulator](https://github.com/mattgodbolt/jsbeeb)
-(and its Acorn Atom) to AI assistants (Claude, Cursor, etc.).
+exposes [jsbeeb](https://github.com/mattgodbolt/jsbeeb), a headless emulator of
+the BBC Micro and the Acorn Atom, to AI assistants (Claude, Cursor, etc.).
 
 Write a BASIC program, run it, get the text output and a screenshot — all
 without opening a browser.
