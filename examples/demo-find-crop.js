@@ -1,4 +1,4 @@
-import { MachineSession } from "jsbeeb/machine-session";
+import { MachineSession } from "jsbeeb";
 import { writeFileSync } from "fs";
 import sharp from "sharp";
 

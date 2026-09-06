@@ -7,10 +7,10 @@
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { findModel } from "jsbeeb/src/models.js";
+import { findModel } from "jsbeeb";
 import { writeFileSync } from "fs";
 import { resolve, dirname } from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -182,13 +182,26 @@ async function main() {
     // load_disc
     const discPath = resolve(__dirname, "examples/hello.ssd");
     const ldResult = await callTool(client, "load_disc", { session_id, image_path: discPath });
-    ok("load_disc succeeds", textContent(ldResult).includes("hello.ssd"));
+    const loaded = JSON.parse(textContent(ldResult));
+    ok("load_disc names the disc", loaded.disc.endsWith("hello.ssd") && loaded.drive === 0);
 
     await callTool(client, "type_input", { session_id, text: "*RUN hello" });
     const discRun = await callTool(client, "run_until_prompt", { session_id });
     const discOutput = JSON.parse(textContent(discRun));
     console.log("Disc run output:", JSON.stringify(discOutput.screenText));
     ok("disc program output correct", discOutput.screenText.includes("HELLO FROM BEEBASM"));
+
+    // load_disc by reference, into the other drive
+    const byRef = await callTool(client, "load_disc", { session_id, image_ref: pathToFileURL(discPath).href, drive: 1 });
+    ok("load_disc takes a URL into drive 1", JSON.parse(textContent(byRef)).drive === 1);
+    await callTool(client, "type_input", { session_id, text: "*RUN :1.hello" });
+    const drive1Run = JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id })));
+    ok("the disc in drive 1 runs", drive1Run.screenText.includes("HELLO FROM BEEBASM"));
+    const bothGiven = await client.callTool({
+        name: "load_disc",
+        arguments: { session_id, image_path: discPath, image_ref: pathToFileURL(discPath).href },
+    });
+    ok("load_disc refuses a path and a reference together", bothGiven.isError === true);
 
     // destroy
     const destroyResult = await callTool(client, "destroy_machine", { session_id });
@@ -251,7 +264,7 @@ async function main() {
     });
     const bootDiscParsed = JSON.parse(textContent(bootDiscResult));
     ok("boot_disc confirms", bootDiscParsed.booting === true);
-    ok("boot_disc loaded disc", bootDiscParsed.image_path.includes("hello.ssd"));
+    ok("boot_disc loaded disc", bootDiscParsed.disc.endsWith("hello.ssd"));
     // Run until prompt to verify the disc actually booted
     const bootDiscRun = await callTool(client, "run_until_prompt", { session_id: sid3 });
     const bootDiscOutput = JSON.parse(textContent(bootDiscRun));

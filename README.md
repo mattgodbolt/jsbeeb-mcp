@@ -116,7 +116,11 @@ optional screenshot, then clean up.
 #### `run_disc`
 
 Boot a BBC Micro, load a disc image, autoboot it (SHIFT+BREAK), return text
-output and an optional screenshot, then clean up.
+output and an optional screenshot, then clean up. The disc is a file on the
+machine running the server (`image_path`), or a reference the way jsbeeb's own
+URLs name one (`image_ref`): `sth:Acornsoft/Elite.zip` for a Stairway to Hell disc,
+`hfe:<path>` for one from the BBC disc archive, or an `http(s):` or `file:`
+URL. Zips are opened and the disc inside used.
 
 ```json
 {
@@ -124,6 +128,14 @@ output and an optional screenshot, then clean up.
   "model": "B-DFS1.2",
   "timeout_secs": 30,
   "screenshot": true
+}
+```
+
+```json
+{
+  "image_ref": "sth:Acornsoft/Elite.zip",
+  "model": "B-DFS1.2",
+  "timeout_secs": 30
 }
 ```
 
@@ -144,11 +156,11 @@ For multi-step interaction (debugging, iterative development):
 | `read_registers`   | Get 6502 CPU registers (PC, A, X, Y, S, P), the frame counter and elapsed cycles |
 | `run_for_cycles`   | Run exactly N 2MHz CPU cycles (drains output by default — use `clear: false` to peek without consuming) |
 | `run_frames`       | Advance N painted frames — use this, not `run_for_cycles`, to step the display |
-| `load_disc`        | Load an `.ssd`/`.dsd` disc image into drive 0                  |
+| `load_disc`        | Put a disc in drive 0 or 1, from a file, an archive or a URL   |
 | `key_down`         | Press and hold a key (e.g. `SHIFT`, `A`, `RETURN`, `F0`)      |
 | `key_up`           | Release a previously held key                                  |
 | `reset`            | Reset the machine; with `autoboot: true`, holds SHIFT during reset (SHIFT+BREAK) |
-| `boot_disc`        | Load a disc image and autoboot it (SHIFT+BREAK)                |
+| `boot_disc`        | Load a disc image (file, archive or URL) and autoboot it (SHIFT+BREAK) |
 | `save_state`       | Snapshot the whole machine server-side, returns a `state_id`   |
 | `restore_state`    | Put a session back to a saved state (same model only)          |
 | `list_states`      | List saved states, newest first                                |
@@ -202,7 +214,8 @@ Or use `reset` with `autoboot: true` / `boot_disc` / `run_disc` for common cases
 - ✅ BBC B (8271 and 1770) and Master 128 models, booting DFS, ADFS or ANFS
 - ✅ Multiple concurrent sessions
 - ✅ Whole-machine state snapshots (checkpoint once, restore between attempts)
-- ✅ Disc image loading and autoboot (`.ssd`/`.dsd`)
+- ✅ Disc image loading and autoboot: `.ssd`/`.dsd`/`.adf` files and zips, discs from the
+  Stairway to Hell and BBC disc archives, and any `http(s):` URL, into either drive
 - ✅ Low-level keyboard control (key_down/key_up)
 
 ## Known limitations
@@ -222,7 +235,7 @@ examples/   # Standalone scripts demonstrating MachineSession directly
 ```
 
 `MachineSession` lives in jsbeeb itself (`src/machine-session.js`) and is
-imported here as `jsbeeb/machine-session`. It wraps jsbeeb's `TestMachine`
+imported from the package's root, `jsbeeb`. It wraps jsbeeb's `TestMachine`
 with a real `Video` instance (full video chip into a 1024×625 RGBA
 framebuffer), VDU text capture, and screenshot support via `sharp`.
 

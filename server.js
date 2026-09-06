@@ -25,8 +25,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { MachineSession } from "jsbeeb/machine-session";
+import { MachineSession, allModels, findModel } from "jsbeeb";
 import { writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 
 // ---------------------------------------------------------------------------
 // BBC key name → browser keyCode mapping
@@ -94,8 +95,45 @@ function resolveKeyCode(keyName) {
     return code;
 }
 
-// Emulated time for ~1 second at 2 MHz
-const OneSec = 2_000_000;
+// Every BBC jsbeeb can build, by the short name findModel takes. The Tube models are second
+// processors, not machines, and are the only ones without a short name; the Atom waits for
+// input somewhere its idle address does not see (jsbeeb#1084), so run_until_prompt would hang.
+const MachineModels = allModels.filter((m) => m.synonyms.length > 0 && !m.isAtom);
+const ModelNames = MachineModels.map((m) => m.synonyms[0]);
+const ModelDescription =
+    "Machine to emulate: " + MachineModels.map((m) => `${m.synonyms[0]} (${m.name})`).join(", ");
+
+function secondsOfCycles(modelName, seconds) {
+    return seconds * findModel(modelName).cyclesPerSecond;
+}
+
+const DiscParams = {
+    image_path: z
+        .string()
+        .optional()
+        .describe("Absolute path to a disc image on this machine: .ssd, .dsd, .adf, or a zip holding one"),
+    image_ref: z
+        .string()
+        .optional()
+        .describe(
+            "A disc as jsbeeb's own URL names it: 'sth:Acornsoft/Elite.zip' for a Stairway to Hell disc, " +
+                "'hfe:<path>' for one from the BBC disc archive, or an http(s) or file: URL",
+        ),
+};
+
+/** The reference the session's resolver takes for a disc given by path or by reference. */
+function discRef({ image_path, image_ref }) {
+    if (!image_path === !image_ref) throw new Error("Give exactly one of image_path or image_ref");
+    return image_path ? pathToFileURL(image_path).href : image_ref;
+}
+
+/** SHIFT+BREAK: the SHIFT stays held for a second of the machine's time so the OS sees it. */
+async function autobootMachine(session, hard = true) {
+    session.keyDown(16); // SHIFT
+    session.reset(hard);
+    await session.runFor(secondsOfCycles(session.modelName, 1));
+    session.keyUp(16);
+}
 
 // ---------------------------------------------------------------------------
 // Session store
@@ -142,13 +180,7 @@ server.tool(
     "Boot a BBC Micro emulator and return a session ID for use with all other tools. " +
         "The machine runs until the BASIC prompt before this call returns.",
     {
-        model: z
-            .enum(["B-DFS1.2", "B-DFS0.9", "B1770", "B1770A", "Master", "MasterADFS", "MasterANFS"])
-            .default("B-DFS1.2")
-            .describe(
-                "BBC Micro model to emulate: a BBC B with the 8271 floppy controller and DFS 1.2 or 0.9, " +
-                    "a BBC B with the 1770 controller booting DFS or ADFS, or a Master 128 booting DFS, ADFS or ANFS",
-            ),
+        model: z.enum(ModelNames).default("B-DFS1.2").describe(ModelDescription),
         boot_timeout_secs: z.number().default(30).describe("Max seconds of emulated time to wait for the boot prompt"),
         tube: z
             .boolean()
@@ -203,16 +235,19 @@ server.tool(
 
 server.tool(
     "load_disc",
-    "Insert a disc image (.ssd or .dsd file) into drive 0 of the emulator. " +
-        "After loading, use type_input to issue DFS commands (e.g. '*RUN hello', '*DIR', 'CHAIN\"\"').",
+    "Put a disc image in a drive, from a file on this machine (image_path) or from the archives or a " +
+        "URL (image_ref). Zips are opened and the disc inside used. " +
+        "After loading, use type_input to issue DFS commands (e.g. '*RUN hello', '*DIR', 'CHAIN\"\"'); " +
+        "a disc in drive 1 is reached as ':1.name'.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
-        image_path: z.string().describe("Absolute path to an .ssd or .dsd disc image file"),
+        ...DiscParams,
+        drive: z.number().int().min(0).max(1).default(0).describe("Drive to put the disc in"),
     },
-    async ({ session_id, image_path }) => {
+    async ({ session_id, image_path, image_ref, drive }) => {
         const session = requireSession(session_id);
-        await session.loadDisc(image_path);
-        return { content: [{ type: "text", text: `Disc image loaded: ${image_path}` }] };
+        const { name, ignored } = await session.loadDiscImage(discRef({ image_path, image_ref }), drive);
+        return { content: [{ type: "text", text: JSON.stringify({ disc: name, drive, ignored }) }] };
     },
 );
 
@@ -588,10 +623,7 @@ server.tool(
     async ({ session_id, hard, autoboot }) => {
         const session = requireSession(session_id);
         if (autoboot) {
-            session.keyDown(16); // SHIFT
-            session.reset(hard);
-            await session.runFor(OneSec);
-            session.keyUp(16);
+            await autobootMachine(session, hard);
             return { content: [{ type: "text", text: JSON.stringify({ reset: true, autoboot: true }) }] };
         }
         session.reset(hard);
@@ -611,17 +643,14 @@ server.tool(
         "use run_for_cycles or run_until_prompt afterwards as needed.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
-        image_path: z.string().describe("Absolute path to an .ssd or .dsd disc image file"),
+        ...DiscParams,
     },
-    async ({ session_id, image_path }) => {
+    async ({ session_id, image_path, image_ref }) => {
         const session = requireSession(session_id);
-        session.loadDisc(image_path);
-        session.keyDown(16); // SHIFT
-        session.reset(true);
-        await session.runFor(OneSec);
-        session.keyUp(16);
+        const { name, ignored } = await session.loadDiscImage(discRef({ image_path, image_ref }));
+        await autobootMachine(session);
         return {
-            content: [{ type: "text", text: JSON.stringify({ image_path, booting: true }) }],
+            content: [{ type: "text", text: JSON.stringify({ disc: name, booting: true, ignored }) }],
         };
     },
 );
@@ -636,25 +665,23 @@ server.tool(
         "(SHIFT+BREAK), return all text output and optionally a screenshot, then destroy the session. " +
         "Like run_basic but for disc images.",
     {
-        image_path: z.string().describe("Absolute path to an .ssd or .dsd disc image file"),
-        model: z.enum(["B-DFS1.2", "Master"]).default("B-DFS1.2").describe("BBC Micro model"),
+        ...DiscParams,
+        model: z.enum(ModelNames).default("B-DFS1.2").describe(ModelDescription),
         timeout_secs: z.number().default(30).describe("Max emulated seconds to allow the disc to boot and run"),
         screenshot: z.boolean().default(true).describe("Include a screenshot of the final screen state"),
     },
-    async ({ image_path, model, timeout_secs, screenshot: wantScreenshot }) => {
+    async ({ image_path, image_ref, model, timeout_secs, screenshot: wantScreenshot }) => {
+        const ref = discRef({ image_path, image_ref });
         const session = new MachineSession(model);
         try {
             await session.initialise();
             await session.boot(30);
-            session.loadDisc(image_path);
-            session.keyDown(16); // SHIFT
-            session.reset(true);
-            await session.runFor(OneSec);
-            session.keyUp(16);
-            await session.runFor(timeout_secs * 2_000_000);
+            const { name, ignored } = await session.loadDiscImage(ref);
+            await autobootMachine(session);
+            await session.runFor(secondsOfCycles(model, timeout_secs));
             const output = session.drainOutput();
 
-            const result = { image_path, output };
+            const result = { disc: name, ignored, output };
 
             if (wantScreenshot) {
                 const png = await session.screenshotActive();
@@ -684,7 +711,7 @@ server.tool(
         "Perfect for quickly trying out ideas without managing sessions.",
     {
         source: z.string().describe("BBC BASIC source code to run"),
-        model: z.enum(["B-DFS1.2", "Master"]).default("B-DFS1.2").describe("BBC Micro model"),
+        model: z.enum(ModelNames).default("B-DFS1.2").describe(ModelDescription),
         timeout_secs: z.number().default(30).describe("Max emulated seconds to allow the program to run"),
         screenshot: z.boolean().default(true).describe("Include a screenshot of the final screen state"),
     },
