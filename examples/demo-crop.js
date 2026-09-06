@@ -2,7 +2,7 @@
  * Run the BeebAsm star globe demo and capture properly-cropped MODE 2 frames.
  * Run: node examples/demo-crop.js /path/to/demo.ssd
  */
-import { MachineSession } from "jsbeeb/machine-session";
+import { MachineSession } from "jsbeeb";
 import { writeFileSync } from "fs";
 import sharp from "sharp";
 
