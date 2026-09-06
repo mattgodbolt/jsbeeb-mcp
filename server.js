@@ -130,9 +130,12 @@ function discRef({ image_path, image_ref }) {
 /** SHIFT+BREAK: the SHIFT stays held for a second of the machine's time so the OS sees it. */
 async function autobootMachine(session, hard = true) {
     session.keyDown(16); // SHIFT
-    session.reset(hard);
-    await session.runFor(secondsOfCycles(session.modelName, 1));
-    session.keyUp(16);
+    try {
+        session.reset(hard);
+        await session.runFor(secondsOfCycles(session.modelName, 1));
+    } finally {
+        session.keyUp(16);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -637,8 +640,8 @@ server.tool(
 
 server.tool(
     "boot_disc",
-    "Load a disc image and autoboot it (SHIFT+BREAK). " +
-        "Equivalent to: load_disc → key_down SHIFT → reset → key_up SHIFT. " +
+    "Load a disc image, from a file here or from the archives or a URL as load_disc takes them, " +
+        "and autoboot it (SHIFT+BREAK). Equivalent to: load_disc → key_down SHIFT → reset → key_up SHIFT. " +
         "The boot sequence is initiated but not run to completion — " +
         "use run_for_cycles or run_until_prompt afterwards as needed.",
     {
