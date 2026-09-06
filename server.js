@@ -11,7 +11,7 @@
  * by adding it to mcp_servers in the client config.
  *
  * Capabilities:
- *   - Boot a BBC B or BBC Master
+ *   - Boot any machine jsbeeb emulates (BBC B, BBC Master, Acorn Atom)
  *   - Load and run BBC BASIC programs
  *   - Type at the keyboard
  *   - Capture text output
@@ -95,10 +95,9 @@ function resolveKeyCode(keyName) {
     return code;
 }
 
-// Every BBC jsbeeb can build, by the short name findModel takes. The Tube models are second
-// processors, not machines, and are the only ones without a short name; the Atom waits for
-// input somewhere its idle address does not see (jsbeeb#1084), so run_until_prompt would hang.
-const MachineModels = allModels.filter((m) => m.synonyms.length > 0 && !m.isAtom);
+// Every machine jsbeeb can build, by the short name findModel takes. The Tube models are
+// second processors, not machines, and are the only ones without a short name.
+const MachineModels = allModels.filter((m) => m.synonyms.length > 0);
 const ModelNames = MachineModels.map((m) => m.synonyms[0]);
 const ModelDescription =
     "Machine to emulate: " + MachineModels.map((m) => `${m.synonyms[0]} (${m.name})`).join(", ");
@@ -180,7 +179,7 @@ const server = new McpServer({
 
 server.tool(
     "create_machine",
-    "Boot a BBC Micro emulator and return a session ID for use with all other tools. " +
+    "Boot one of the machines jsbeeb emulates and return a session ID for use with all other tools. " +
         "The machine runs until the BASIC prompt before this call returns.",
     {
         model: z.enum(ModelNames).default("B-DFS1.2").describe(ModelDescription),
@@ -454,7 +453,7 @@ server.tool(
 
 server.tool(
     "run_for_cycles",
-    "Run the emulator for an exact number of 2MHz CPU cycles. " +
+    "Run the emulator for an exact number of CPU cycles (2MHz on a BBC, 1MHz on an Atom). " +
         "Useful for precise timing, or just to advance the clock a bit between interactions. " +
         "Do not use this to step frames: a frame is 40000 cycles with interlace on (the default) " +
         "but 39936 with it off, so a fixed step drifts against the display. Use run_frames instead. " +
@@ -463,7 +462,7 @@ server.tool(
         "to avoid losing output that you want to collect later via run_until_prompt.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
-        cycles: z.number().int().min(1).describe("Number of 2MHz CPU cycles to execute"),
+        cycles: z.number().int().min(1).describe("Number of CPU cycles to execute"),
         clear: z
             .boolean()
             .default(true)
