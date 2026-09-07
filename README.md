@@ -159,6 +159,8 @@ For multi-step interaction (debugging, iterative development):
 | `load_disc`        | Put a disc in drive 0 or 1, from a file, an archive or a URL   |
 | `key_down`         | Press and hold a key (e.g. `SHIFT`, `A`, `RETURN`, `F0`)      |
 | `key_up`           | Release a previously held key                                  |
+| `keyboard_state`   | What is held (name, matrix position, internal key number) and whether typing is pending |
+| `release_all_keys` | Release everything and drop typing an interrupted `type_input` left pending |
 | `reset`            | Reset the machine; with `autoboot: true`, holds SHIFT during reset (SHIFT+BREAK) |
 | `boot_disc`        | Load a disc image (file, archive or URL) and autoboot it (SHIFT+BREAK) |
 | `save_state`       | Snapshot the whole machine server-side, returns a `state_id`   |
@@ -198,6 +200,14 @@ key_down SHIFT → reset → run_for_cycles (1s) → key_up SHIFT → run_until_
 ```
 
 Or use `reset` with `autoboot: true` / `boot_disc` / `run_disc` for common cases.
+Both report `shift_held_at_reset`, so a boot that lands in the tape filing
+system can be told apart from a disc that does not autoboot.
+
+A breakpoint that fires part way through `type_input` leaves the rest of the
+text still to be typed, and the typist keeps the keyboard until it is. Until
+then `key_down` and `key_up` refuse rather than dropping the key; `reset` and
+`boot_disc` drop the pending text themselves. `keyboard_state` shows what is
+held and whether typing is pending, and `release_all_keys` clears both.
 
 **Key names:** `SHIFT`, `CTRL`, `RETURN`, `SPACE`, `DELETE`, `BACKSPACE`,
 `ESCAPE`, `TAB`, `CAPS_LOCK`, `UP`, `DOWN`, `LEFT`, `RIGHT`, `F0`–`F9`,

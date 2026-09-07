@@ -288,14 +288,12 @@ async function main() {
     ok("registers carry the cycle counter", sweep.every((r) => typeof r.registers.elapsed_cycles === "number"));
     ok("registers stop at the breakpoint", sweep.every((r) => r.registers.pc === irqAddress));
 
-    // A hit during type_input is reported by the next run before it runs anything.
+    // A hit during type_input is reported by type_input itself, and the next run carries on.
     await callTool(client, "clear_breakpoint", { session_id: sid2, id: 0 });
     const oswrch = await setBreakpoint(0xffee);
-    await callTool(client, "type_input", { session_id: sid2, text: "X" });
-    const pending = await runFor(1000);
-    ok("a hit during type_input is reported first", pending.stopped_reason === "pending_breakpoint");
-    ok("and names the breakpoint", pending.breakpoint?.id === oswrch.breakpoint_id);
-    ok("and nothing runs until it has been", pending.cycles_run === 0 && pending.completed === false);
+    const typedX = JSON.parse(textContent(await callTool(client, "type_input", { session_id: sid2, text: "X" })));
+    ok("a hit during type_input is reported by it", typedX.stopped_reason === "breakpoint");
+    ok("and names the breakpoint", typedX.breakpoint?.id === oswrch.breakpoint_id && typedX.completed === false);
     const onward = await runFor(1000);
     ok("the next run carries on", onward.cycles_run > 0 && onward.stopped_reason !== "pending_breakpoint");
     await callTool(client, "clear_breakpoint", { session_id: sid2, id: 0 });
@@ -303,6 +301,62 @@ async function main() {
     ok("a run with no breakpoint completes", noBreakpoint.completed === true && noBreakpoint.breakpoint === undefined);
     // A stop leaves no unspent budget behind: the run after it is the length asked for, within an instruction.
     ok("the run after a breakpoint stop runs only what was asked", Math.abs(noBreakpoint.cycles_run - 1000) <= 16);
+
+    // --- keyboard state / interrupted typing ---
+    console.log("\n--- keyboard state ---");
+    const keyboard = async () =>
+        JSON.parse(textContent(await callTool(client, "keyboard_state", { session_id: sid2 })));
+    const releaseAll = async () =>
+        JSON.parse(textContent(await callTool(client, "release_all_keys", { session_id: sid2 })));
+
+    await releaseAll();
+    const quiet = await keyboard();
+    ok("a released keyboard reports nothing held", quiet.held_keys.length === 0 && quiet.typing_pending === false);
+
+    await callTool(client, "key_down", { session_id: sid2, key: "A" });
+    const holdingA = await keyboard();
+    console.log("held:", JSON.stringify(holdingA.held_keys));
+    ok("a held key is reported by name", holdingA.held_keys.some((k) => k.name === "A"));
+    ok(
+        "with its internal key number and INKEY number",
+        holdingA.held_keys.some((k) => k.internal === 0x41 && k.inkey === -66),
+    );
+    const releasedA = await releaseAll();
+    ok("release_all_keys says what it released", releasedA.released.some((k) => k.name === "A"));
+    ok("and that no typing was pending", releasedA.cancelled_typing === false);
+    ok("and leaves nothing held", (await keyboard()).held_keys.length === 0);
+
+    // A breakpoint part way through type_input leaves the typist holding the keyboard.
+    const echo = await setBreakpoint(0xffee);
+    const typed = JSON.parse(textContent(await callTool(client, "type_input", { session_id: sid2, text: "X" })));
+    ok("type_input reports the breakpoint that cut it short", typed.breakpoint?.id === echo.breakpoint_id);
+    ok("and that it did not finish", typed.completed === false);
+    ok("keyboard_state shows the typing pending", (await keyboard()).typing_pending === true);
+    const refused = await client.callTool({ name: "key_down", arguments: { session_id: sid2, key: "SHIFT" } });
+    ok("key_down refuses while typing is pending", refused.isError === true);
+    ok("and says how to recover", textContent(refused).includes("release_all_keys"));
+    const dropped = await releaseAll();
+    ok("release_all_keys drops the pending typing", dropped.cancelled_typing === true);
+    ok("so nothing is pending afterwards", (await keyboard()).typing_pending === false);
+    await callTool(client, "key_down", { session_id: sid2, key: "SHIFT" });
+    ok("and keys work again", (await keyboard()).held_keys.some((k) => k.name === "SHIFT"));
+    await callTool(client, "key_up", { session_id: sid2, key: "SHIFT" });
+
+    // A second interrupted type_input, for boot_disc to drop itself.
+    await callTool(client, "type_input", { session_id: sid2, text: "X" });
+    ok("typing is pending again", (await keyboard()).typing_pending === true);
+    await callTool(client, "clear_breakpoint", { session_id: sid2, id: 0 });
+
+    // boot_disc drops the pending typing itself, so SHIFT really is down at the reset.
+    const bootWhileTyping = JSON.parse(
+        textContent(await callTool(client, "boot_disc", { session_id: sid2, image_path: discPathBoot })),
+    );
+    ok("boot_disc drops the pending typing", bootWhileTyping.cancelled_typing === true);
+    ok("and saw SHIFT held at the reset", bootWhileTyping.shift_held_at_reset === true);
+    const bootedWhileTyping = JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id: sid2 })));
+    ok("so the disc autoboots", bootedWhileTyping.screenText.includes("HELLO FROM BEEBASM"));
+    const afterBoot = await keyboard();
+    ok("and the keyboard is clear afterwards", afterBoot.held_keys.length === 0 && afterBoot.typing_pending === false);
 
     await callTool(client, "destroy_machine", { session_id: sid2 });
 
