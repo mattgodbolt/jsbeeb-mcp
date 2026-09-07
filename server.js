@@ -484,8 +484,8 @@ server.tool(
 
 server.tool(
     "run_for_cycles",
-    "Run the emulator for a number of CPU cycles (2MHz on a BBC, 1MHz on an Atom), exactly that many " +
-        "unless a breakpoint stops it first. " +
+    "Run the emulator for a number of CPU cycles (2MHz on a BBC, 1MHz on an Atom): that many to within " +
+        "the instruction that finishes it, unless a breakpoint stops it first. " +
         "Useful for precise timing, or just to advance the clock a bit between interactions. " +
         "Do not use this to step frames: a frame is 40000 cycles with interlace on (the default) " +
         "but 39936 with it off, so a fixed step drifts against the display. Use run_frames instead. " +

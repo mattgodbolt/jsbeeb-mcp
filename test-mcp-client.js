@@ -301,6 +301,8 @@ async function main() {
     await callTool(client, "clear_breakpoint", { session_id: sid2, id: 0 });
     const noBreakpoint = await runFor(1000);
     ok("a run with no breakpoint completes", noBreakpoint.completed === true && noBreakpoint.breakpoint === undefined);
+    // A stop leaves no unspent budget behind: the run after it is the length asked for, within an instruction.
+    ok("the run after a breakpoint stop runs only what was asked", Math.abs(noBreakpoint.cycles_run - 1000) <= 16);
 
     await callTool(client, "destroy_machine", { session_id: sid2 });
 
