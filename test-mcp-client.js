@@ -252,6 +252,56 @@ async function main() {
     console.log("Autoboot output:", JSON.stringify(autobootOutput.screenText));
     ok("autoboot ran disc", autobootOutput.screenText.includes("HELLO FROM BEEBASM"));
 
+    // --- breakpoints ---
+    console.log("\n--- breakpoints ---");
+    const runFor = async (cycles) =>
+        JSON.parse(textContent(await callTool(client, "run_for_cycles", { session_id: sid2, cycles })));
+    const registersOf = async () =>
+        JSON.parse(textContent(await callTool(client, "read_registers", { session_id: sid2 })));
+
+    // IRQ1V is entered every interrupt, so a breakpoint on it fires within a frame.
+    const irq1v = JSON.parse(
+        textContent(await callTool(client, "read_memory", { session_id: sid2, address: 0x204, length: 2 })),
+    );
+    const irqAddress = irq1v.bytes[0] | (irq1v.bytes[1] << 8);
+    const setBreakpoint = async (address) =>
+        JSON.parse(textContent(await callTool(client, "set_breakpoint", { session_id: sid2, address })));
+    const bpResult = await setBreakpoint(irqAddress);
+    ok("set_breakpoint returns an id", bpResult.breakpoint_id > 0);
+
+    // Three runs in a row from the breakpoint: each must move on and stop at the next interrupt.
+    const sweep = [];
+    for (let i = 0; i < 3; i++) {
+        const before = (await registersOf()).elapsed_cycles;
+        const run = await runFor(600000);
+        sweep.push({ ...run, actual: (await registersOf()).elapsed_cycles - before });
+    }
+    console.log("sweep:", JSON.stringify(sweep.map(({ cycles_run, actual }) => ({ cycles_run, actual }))));
+    ok(
+        "each run stops at the breakpoint",
+        sweep.every((r) => r.breakpoint?.id === bpResult.breakpoint_id && r.completed === false),
+    );
+    ok("each run says why it stopped", sweep.every((r) => r.stopped_reason === "breakpoint"));
+    ok("each run from the breakpoint moves on", sweep.every((r) => r.cycles_run > 0));
+    ok("cycles_run is the count run, not requested", sweep.every((r) => r.cycles_run === r.actual));
+    ok("a stopped run reports fewer cycles than asked", sweep.every((r) => r.cycles_run < 600000));
+    ok("registers carry the cycle counter", sweep.every((r) => typeof r.registers.elapsed_cycles === "number"));
+    ok("registers stop at the breakpoint", sweep.every((r) => r.registers.pc === irqAddress));
+
+    // A hit during type_input is reported by the next run before it runs anything.
+    await callTool(client, "clear_breakpoint", { session_id: sid2, id: 0 });
+    const oswrch = await setBreakpoint(0xffee);
+    await callTool(client, "type_input", { session_id: sid2, text: "X" });
+    const pending = await runFor(1000);
+    ok("a hit during type_input is reported first", pending.stopped_reason === "pending_breakpoint");
+    ok("and names the breakpoint", pending.breakpoint?.id === oswrch.breakpoint_id);
+    ok("and nothing runs until it has been", pending.cycles_run === 0 && pending.completed === false);
+    const onward = await runFor(1000);
+    ok("the next run carries on", onward.cycles_run > 0 && onward.stopped_reason !== "pending_breakpoint");
+    await callTool(client, "clear_breakpoint", { session_id: sid2, id: 0 });
+    const noBreakpoint = await runFor(1000);
+    ok("a run with no breakpoint completes", noBreakpoint.completed === true && noBreakpoint.breakpoint === undefined);
+
     await callTool(client, "destroy_machine", { session_id: sid2 });
 
     // --- boot_disc ---

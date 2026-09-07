@@ -154,7 +154,7 @@ For multi-step interaction (debugging, iterative development):
 | `read_memory`      | Read bytes from the memory map (with hex dump)                 |
 | `write_memory`     | Poke bytes into memory                                         |
 | `read_registers`   | Get 6502 CPU registers (PC, A, X, Y, S, P), the frame counter and elapsed cycles |
-| `run_for_cycles`   | Run exactly N CPU cycles (drains output by default — use `clear: false` to peek without consuming) |
+| `run_for_cycles`   | Run N CPU cycles, or up to a breakpoint; reports `cycles_run`, the count actually run (drains output by default — use `clear: false` to peek without consuming) |
 | `run_frames`       | Advance N painted frames — use this, not `run_for_cycles`, to step the display |
 | `load_disc`        | Put a disc in drive 0 or 1, from a file, an archive or a URL   |
 | `key_down`         | Press and hold a key (e.g. `SHIFT`, `A`, `RETURN`, `F0`)      |
