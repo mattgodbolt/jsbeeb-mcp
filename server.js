@@ -122,7 +122,7 @@ const PagingParams = {
     shadow: z
         .boolean()
         .optional()
-        .describe("On a Master, read shadow RAM (true) or main RAM (false) at &3000–&7FFF, whatever ACCCON says"),
+        .describe("On a Master, use shadow RAM (true) or main RAM (false) at &3000–&7FFF, whatever ACCCON says"),
 };
 
 /** What the machine has paged in, and any override this access used, so the caller knows what it read. */
@@ -1070,8 +1070,8 @@ server.tool(
         "and takes bank or shadow the same way.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
-        address: z.number().min(0).max(65535).describe("Start address (0–65535)"),
-        length: z.number().min(1).max(65536).describe("Number of bytes to save"),
+        address: z.number().int().min(0).max(65535).describe("Start address (0–65535)"),
+        length: z.number().int().min(1).max(65536).describe("Number of bytes to save"),
         path: z.string().describe("Absolute path to write the file to"),
         ...PagingParams,
     },
