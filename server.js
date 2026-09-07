@@ -26,6 +26,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { MachineSession, allModels, findModel } from "jsbeeb";
+import { BBC } from "jsbeeb/src/keymap.js";
+import { ATOM } from "jsbeeb/src/keymap-atom.js";
 import { writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -126,12 +128,69 @@ function discRef({ image_path, image_ref }) {
     return image_path ? pathToFileURL(image_path).href : image_ref;
 }
 
-/** SHIFT+BREAK: the SHIFT stays held for a second of the machine's time so the OS sees it. */
+/** The model's own key table, mapping key names to matrix positions. */
+function keyTable(session) {
+    return findModel(session.modelName).isAtom ? ATOM : BBC;
+}
+
+/** A held key as keyboard_state reports it: matrix position, name, and on a BBC the numbers programs use. */
+function describeKey(session, [col, row]) {
+    const table = keyTable(session);
+    const key = { col, row };
+    const name = Object.keys(table).find((k) => table[k][0] === col && table[k][1] === row);
+    if (name) key.name = name;
+    if (table === BBC) {
+        key.internal = (row << 4) | col;
+        key.inkey = -(key.internal + 1);
+    }
+    return key;
+}
+
+function keyboardState(session) {
+    return {
+        held_keys: session.heldKeys().map((k) => describeKey(session, k)),
+        typing_pending: session.typingPending,
+    };
+}
+
+/**
+ * Typing from type_input that a breakpoint cut short keeps the keyboard until
+ * it finishes, and a key pressed meanwhile would be lost. Tools that press
+ * keys refuse instead, and tools that reset drop the typing first.
+ */
+function requireKeyboard(session) {
+    if (session.typingPending) {
+        throw new Error(
+            "type_input is still typing (a breakpoint stopped it part way): run the machine on to let it " +
+                "finish, or call release_all_keys to drop it",
+        );
+    }
+}
+
+/** Drops any typing still pending, reporting whether there was any. */
+function cancelPendingTyping(session) {
+    const cancelled = session.typingPending;
+    session.cancelTyping();
+    return cancelled;
+}
+
+function isShiftHeld(session) {
+    const [shiftCol, shiftRow] = keyTable(session).SHIFT;
+    return session.heldKeys().some(([col, row]) => col === shiftCol && row === shiftRow);
+}
+
+/**
+ * SHIFT+BREAK: the SHIFT stays held for a second of the machine's time so the
+ * OS sees it. Reports whether SHIFT really was down at the reset.
+ */
 async function autobootMachine(session, hard = true) {
+    const cancelledTyping = cancelPendingTyping(session);
     session.keyDown(16); // SHIFT
     try {
         session.reset(hard);
+        const shiftHeld = isShiftHeld(session);
         await session.runFor(secondsOfCycles(session.modelName, 1));
+        return { shift_held_at_reset: shiftHeld, cancelled_typing: cancelledTyping };
     } finally {
         session.keyUp(16);
     }
@@ -167,9 +226,9 @@ function takeBreakpointHit(session) {
 }
 
 /**
- * A breakpoint hit during an earlier call that does not report hits itself
- * (type_input, say) is reported before anything more runs, so the caller sees
- * the machine where the breakpoint left it.
+ * A breakpoint hit during an earlier call that did not report it is reported
+ * before anything more runs, so the caller sees the machine where the
+ * breakpoint left it.
  */
 function pendingBreakpointResult(session, clear, counters) {
     const hit = takeBreakpointHit(session);
@@ -323,7 +382,9 @@ server.tool(
     "type_input",
     "Type text at the current keyboard prompt (simulates key presses). " +
         "A newline/RETURN is automatically sent after the text. " +
-        "Use run_until_prompt after this to collect output.",
+        "Use run_until_prompt after this to collect output. A breakpoint stops the typing part way: " +
+        "completed is false, the breakpoint and registers are reported, and the rest is typed as the " +
+        "machine runs on; until then key_down and key_up refuse, and release_all_keys drops it.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
         text: z.string().describe("Text to type (e.g. 'RUN' or '10 PRINT\"HELLO\"')"),
@@ -331,7 +392,8 @@ server.tool(
     async ({ session_id, text }) => {
         const session = requireSession(session_id);
         await session.type(text);
-        return { content: [{ type: "text", text: `Typed: ${text}` }] };
+        const result = addBreakpointStop(session, { typed: text, completed: !session.typingPending });
+        return { content: [{ type: "text", text: JSON.stringify(result) }] };
     },
 );
 
@@ -492,7 +554,7 @@ server.tool(
         "Reports cycles_run, the cycles actually executed, and accumulated text output. A breakpoint " +
         "stops the run early: completed is false, stopped_reason is 'breakpoint', and the registers " +
         "(with elapsed_cycles) show where it stopped; the next call runs on from there. A breakpoint " +
-        "hit during an earlier call that does not report hits itself (type_input) is reported first, " +
+        "hit during an earlier call that did not report it is reported first, " +
         "with stopped_reason 'pending_breakpoint' and cycles_run 0. " +
         "By default the output buffer is cleared after returning — " +
         "pass clear=false when using this as an intermediate step (e.g. between key_down and key_up) " +
@@ -535,7 +597,7 @@ server.tool(
         "so compare it across calls to confirm the screen really did move on). " +
         "completed is false if the machine stopped painting or a breakpoint fired first; a breakpoint " +
         "stop reports stopped_reason 'breakpoint' and the registers, or 'pending_breakpoint' for a hit " +
-        "left over from type_input, as run_for_cycles does.",
+        "an earlier call left unreported, as run_for_cycles does.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
         count: z.number().int().min(1).max(10000).default(1).describe("Number of frames to advance"),
@@ -582,6 +644,7 @@ server.tool(
     async ({ session_id, key }) => {
         const session = requireSession(session_id);
         const code = resolveKeyCode(key);
+        requireKeyboard(session);
         session.keyDown(code);
         return { content: [{ type: "text", text: `Key down: ${key}` }] };
     },
@@ -601,8 +664,44 @@ server.tool(
     async ({ session_id, key }) => {
         const session = requireSession(session_id);
         const code = resolveKeyCode(key);
+        requireKeyboard(session);
         session.keyUp(code);
         return { content: [{ type: "text", text: `Key up: ${key}` }] };
+    },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: keyboard_state
+// ---------------------------------------------------------------------------
+
+server.tool(
+    "keyboard_state",
+    "Report the keyboard as the machine sees it: every key held, with its matrix column and row, its " +
+        "name, and on a BBC its internal key number (as OSBYTE 121 and a keyboard scan use) and negative " +
+        "INKEY number; and whether typing from an interrupted type_input is still pending. " +
+        "Check this before a test that assumes nothing is held.",
+    { session_id: z.string().describe("Session ID from create_machine") },
+    async ({ session_id }) => {
+        const session = requireSession(session_id);
+        return { content: [{ type: "text", text: JSON.stringify(keyboardState(session)) }] };
+    },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: release_all_keys
+// ---------------------------------------------------------------------------
+
+server.tool(
+    "release_all_keys",
+    "Release every held key and drop any typing still pending from an interrupted type_input, " +
+        "so the keyboard is in a known state. Reports what was released.",
+    { session_id: z.string().describe("Session ID from create_machine") },
+    async ({ session_id }) => {
+        const session = requireSession(session_id);
+        const before = keyboardState(session);
+        session.releaseAllKeys();
+        const result = { released: before.held_keys, cancelled_typing: before.typing_pending };
+        return { content: [{ type: "text", text: JSON.stringify(result) }] };
     },
 );
 
@@ -613,8 +712,9 @@ server.tool(
 server.tool(
     "reset",
     "Reset the BBC Micro. With autoboot=true, holds SHIFT during reset to trigger " +
-        "a disc autoboot (SHIFT+BREAK). The boot sequence is initiated but not run to completion — " +
-        "use run_for_cycles or run_until_prompt afterwards as needed.",
+        "a disc autoboot (SHIFT+BREAK) and reports shift_held_at_reset. The boot sequence is initiated " +
+        "but not run to completion — use run_for_cycles or run_until_prompt afterwards as needed. " +
+        "Typing left pending by an interrupted type_input is dropped first (cancelled_typing).",
     {
         session_id: z.string().describe("Session ID from create_machine"),
         hard: z.boolean().default(true).describe("Hard reset (power-on) if true, soft reset if false"),
@@ -626,11 +726,14 @@ server.tool(
     async ({ session_id, hard, autoboot }) => {
         const session = requireSession(session_id);
         if (autoboot) {
-            await autobootMachine(session, hard);
-            return { content: [{ type: "text", text: JSON.stringify({ reset: true, autoboot: true }) }] };
+            const booted = await autobootMachine(session, hard);
+            return { content: [{ type: "text", text: JSON.stringify({ reset: true, autoboot: true, ...booted }) }] };
         }
+        const cancelledTyping = cancelPendingTyping(session);
         session.reset(hard);
-        return { content: [{ type: "text", text: JSON.stringify({ reset: true, hard }) }] };
+        return {
+            content: [{ type: "text", text: JSON.stringify({ reset: true, hard, cancelled_typing: cancelledTyping }) }],
+        };
     },
 );
 
@@ -643,7 +746,8 @@ server.tool(
     "Load a disc image, from a file here or from the archives or a URL as load_disc takes them, " +
         "and autoboot it (SHIFT+BREAK). Equivalent to: load_disc → key_down SHIFT → reset → key_up SHIFT. " +
         "The boot sequence is initiated but not run to completion — " +
-        "use run_for_cycles or run_until_prompt afterwards as needed.",
+        "use run_for_cycles or run_until_prompt afterwards as needed. Reports shift_held_at_reset, and " +
+        "cancelled_typing if an interrupted type_input had to be dropped first.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
         ...DiscParams,
@@ -651,9 +755,9 @@ server.tool(
     async ({ session_id, image_path, image_ref }) => {
         const session = requireSession(session_id);
         const { name, ignored } = await session.loadDiscImage(discRef({ image_path, image_ref }));
-        await autobootMachine(session);
+        const booted = await autobootMachine(session);
         return {
-            content: [{ type: "text", text: JSON.stringify({ disc: name, booting: true, ignored }) }],
+            content: [{ type: "text", text: JSON.stringify({ disc: name, booting: true, ignored, ...booted }) }],
         };
     },
 );
