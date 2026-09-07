@@ -335,6 +335,16 @@ async function main() {
     const refused = await client.callTool({ name: "key_down", arguments: { session_id: sid2, key: "SHIFT" } });
     ok("key_down refuses while typing is pending", refused.isError === true);
     ok("and says how to recover", textContent(refused).includes("release_all_keys"));
+    const dropped = await releaseAll();
+    ok("release_all_keys drops the pending typing", dropped.cancelled_typing === true);
+    ok("so nothing is pending afterwards", (await keyboard()).typing_pending === false);
+    await callTool(client, "key_down", { session_id: sid2, key: "SHIFT" });
+    ok("and keys work again", (await keyboard()).held_keys.some((k) => k.name === "SHIFT"));
+    await callTool(client, "key_up", { session_id: sid2, key: "SHIFT" });
+
+    // A second interrupted type_input, for boot_disc to drop itself.
+    await callTool(client, "type_input", { session_id: sid2, text: "X" });
+    ok("typing is pending again", (await keyboard()).typing_pending === true);
     await callTool(client, "clear_breakpoint", { session_id: sid2, id: 0 });
 
     // boot_disc drops the pending typing itself, so SHIFT really is down at the reset.
