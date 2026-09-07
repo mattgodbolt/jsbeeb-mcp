@@ -1,5 +1,20 @@
 # Changelog
 
+## [3.4.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v3.3.0...v3.4.0) (2026-09-07)
+
+
+### Features
+
+* key_down and key_up take a BBC internal key number, an INKEY number, or a matrix position ([#34](https://github.com/mattgodbolt/jsbeeb-mcp/issues/34)) ([3c376ba](https://github.com/mattgodbolt/jsbeeb-mcp/commit/3c376bad9732e8811981a4f492c76c8b291a06e0))
+* keyboard_state and release_all_keys, and typing a breakpoint interrupted no longer swallows the SHIFT of an autoboot ([#33](https://github.com/mattgodbolt/jsbeeb-mcp/issues/33)) ([080e02d](https://github.com/mattgodbolt/jsbeeb-mcp/commit/080e02d04abdf73a2b659794f850f02a367fb7d1))
+* read_memory and save_memory report which bank they read, and can be pointed at a bank or shadow RAM ([#35](https://github.com/mattgodbolt/jsbeeb-mcp/issues/35)) ([9df03d9](https://github.com/mattgodbolt/jsbeeb-mcp/commit/9df03d9d7869e8b5b7c4ae12e31b2fec67353873))
+
+
+### Bug Fixes
+
+* run_for_cycles runs on from a breakpoint and reports the cycles it ran ([#30](https://github.com/mattgodbolt/jsbeeb-mcp/issues/30)) ([2882496](https://github.com/mattgodbolt/jsbeeb-mcp/commit/28824962cbec05abce6ccca9f9c14afc913a9e81))
+* the run after a breakpoint stop no longer overruns, on jsbeeb 1.25.0 ([#32](https://github.com/mattgodbolt/jsbeeb-mcp/issues/32)) ([b2156c9](https://github.com/mattgodbolt/jsbeeb-mcp/commit/b2156c9ea6867d2876f1190385046c3f16de8d25))
+
 ## [3.3.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v3.2.0...v3.3.0) (2026-09-06)
 
 
