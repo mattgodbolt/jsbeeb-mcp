@@ -154,6 +154,49 @@ const states = new Map(); // stateId → { model, label, saved_from, saved_at, s
 const MaxSavedStates = 100;
 const MaxStateLabelLength = 200;
 
+/** The CPU registers with the frame and cycle counters, as every tool that reports a stop returns them. */
+function registersWithCounters(session) {
+    return { ...session.registers(), frame_count: session.frameCount, elapsed_cycles: session.elapsedCycles };
+}
+
+/** The breakpoint hit since the last call to this, if any, cleared so the next run is not stopped by it again. */
+function takeBreakpointHit(session) {
+    const hit = session.hitBreakpoint();
+    if (hit) session.resetBreakpointHits();
+    return hit;
+}
+
+/**
+ * A breakpoint hit during an earlier call that does not report hits itself
+ * (type_input, say) is reported before anything more runs, so the caller sees
+ * the machine where the breakpoint left it.
+ */
+function pendingBreakpointResult(session, clear, counters) {
+    const hit = takeBreakpointHit(session);
+    if (!hit) return null;
+    return {
+        ...counters,
+        completed: false,
+        stopped_reason: "pending_breakpoint",
+        output: session.drainOutput({ clear }),
+        breakpoint: hit,
+        registers: registersWithCounters(session),
+    };
+}
+
+/** Adds what a run stopped by a breakpoint reports to `result`. */
+function addBreakpointStop(session, result) {
+    const hit = takeBreakpointHit(session);
+    if (!hit) return result;
+    return {
+        ...result,
+        completed: false,
+        stopped_reason: "breakpoint",
+        breakpoint: hit,
+        registers: registersWithCounters(session),
+    };
+}
+
 function requireSession(sessionId) {
     const s = sessions.get(sessionId);
     if (!s) throw new Error(`No session with id "${sessionId}". Call create_machine first.`);
@@ -431,19 +474,7 @@ server.tool(
     { session_id: z.string().describe("Session ID from create_machine") },
     async ({ session_id }) => {
         const session = requireSession(session_id);
-        const regs = session.registers();
-        return {
-            content: [
-                {
-                    type: "text",
-                    text: JSON.stringify({
-                        ...regs,
-                        frame_count: session.frameCount,
-                        elapsed_cycles: session.elapsedCycles,
-                    }),
-                },
-            ],
-        };
+        return { content: [{ type: "text", text: JSON.stringify(registersWithCounters(session)) }] };
     },
 );
 
@@ -457,7 +488,12 @@ server.tool(
         "Useful for precise timing, or just to advance the clock a bit between interactions. " +
         "Do not use this to step frames: a frame is 40000 cycles with interlace on (the default) " +
         "but 39936 with it off, so a fixed step drifts against the display. Use run_frames instead. " +
-        "Returns accumulated text output. By default the output buffer is cleared after returning — " +
+        "Reports cycles_run, the cycles actually executed, and accumulated text output. A breakpoint " +
+        "stops the run early: completed is false, stopped_reason is 'breakpoint', and the registers " +
+        "(with elapsed_cycles) show where it stopped; the next call runs on from there. A breakpoint " +
+        "hit during an earlier call that does not report hits itself (type_input) is reported first, " +
+        "with stopped_reason 'pending_breakpoint' and cycles_run 0. " +
+        "By default the output buffer is cleared after returning — " +
         "pass clear=false when using this as an intermediate step (e.g. between key_down and key_up) " +
         "to avoid losing output that you want to collect later via run_until_prompt.",
     {
@@ -470,35 +506,18 @@ server.tool(
     },
     async ({ session_id, cycles, clear }) => {
         const session = requireSession(session_id);
-        // If a breakpoint already fired (e.g. during type_input), report it
-        // immediately without running more cycles.
-        if (session.hitBreakpoint()) {
-            const output = session.drainOutput({ clear });
-            const regs = session.registers();
-            const hit = session.hitBreakpoint();
-            session.resetBreakpointHits();
-            return {
-                content: [{ type: "text", text: JSON.stringify({ cycles_run: 0, output, breakpoint: hit, registers: regs }) }],
-            };
-        }
-        session.resetBreakpointHits();
+        const pending = pendingBreakpointResult(session, clear, { cycles_run: 0 });
+        if (pending) return { content: [{ type: "text", text: JSON.stringify(pending) }] };
+
+        const startCycles = session.elapsedCycles;
         await session.runFor(cycles);
         const output = session.drainOutput({ clear });
-        const hit = session.hitBreakpoint();
-        const result = { cycles_run: cycles, output };
-        if (hit) {
-            const regs = session.registers();
-            result.breakpoint = hit;
-            result.registers = regs;
-        }
-        return {
-            content: [
-                {
-                    type: "text",
-                    text: JSON.stringify(result),
-                },
-            ],
-        };
+        const result = addBreakpointStop(session, {
+            cycles_run: session.elapsedCycles - startCycles,
+            completed: true,
+            output,
+        });
+        return { content: [{ type: "text", text: JSON.stringify(result) }] };
     },
 );
 
@@ -513,7 +532,9 @@ server.tool(
         "screenshots to see flicker or tearing, or stepping an animation. One frame is exactly one " +
         "new screenshot. Reports frames_run, cycles_run, and frame_count (which only ever climbs, " +
         "so compare it across calls to confirm the screen really did move on). " +
-        "completed is false if the machine stopped painting or a breakpoint fired first.",
+        "completed is false if the machine stopped painting or a breakpoint fired first; a breakpoint " +
+        "stop reports stopped_reason 'breakpoint' and the registers, or 'pending_breakpoint' for a hit " +
+        "left over from type_input, as run_for_cycles does.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
         count: z.number().int().min(1).max(10000).default(1).describe("Number of frames to advance"),
@@ -524,43 +545,22 @@ server.tool(
     },
     async ({ session_id, count, clear }) => {
         const session = requireSession(session_id);
-        if (session.hitBreakpoint()) {
-            const output = session.drainOutput({ clear });
-            const regs = session.registers();
-            const hit = session.hitBreakpoint();
-            session.resetBreakpointHits();
-            return {
-                content: [
-                    {
-                        type: "text",
-                        text: JSON.stringify({
-                            frames_run: 0,
-                            cycles_run: 0,
-                            frame_count: session.frameCount,
-                            completed: false,
-                            output,
-                            breakpoint: hit,
-                            registers: regs,
-                        }),
-                    },
-                ],
-            };
-        }
-        session.resetBreakpointHits();
+        const pending = pendingBreakpointResult(session, clear, {
+            frames_run: 0,
+            cycles_run: 0,
+            frame_count: session.frameCount,
+        });
+        if (pending) return { content: [{ type: "text", text: JSON.stringify(pending) }] };
+
         const { framesRun, cyclesRun, completed } = await session.runFrames(count);
         const output = session.drainOutput({ clear });
-        const hit = session.hitBreakpoint();
-        const result = {
+        const result = addBreakpointStop(session, {
             frames_run: framesRun,
             cycles_run: cyclesRun,
             frame_count: session.frameCount,
             completed,
             output,
-        };
-        if (hit) {
-            result.breakpoint = hit;
-            result.registers = session.registers();
-        }
+        });
         return { content: [{ type: "text", text: JSON.stringify(result) }] };
     },
 );
