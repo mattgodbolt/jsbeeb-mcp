@@ -121,9 +121,10 @@ const KeySelector = {
     inkey: z
         .number()
         .int()
+        .min(-0x80)
         .max(-1)
         .optional()
-        .describe("Negative INKEY number (X is -67, SPACE is -99); the internal number is -inkey - 1"),
+        .describe("Negative INKEY number, -1 to -128 (X is -67, SPACE is -99); the internal number is -inkey - 1"),
     col: z.number().int().min(0).max(15).optional().describe("Keyboard matrix column, given with row"),
     row: z.number().int().min(0).max(15).optional().describe("Keyboard matrix row, given with col"),
 };

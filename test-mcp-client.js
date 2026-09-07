@@ -379,6 +379,8 @@ async function main() {
     ok("but only one", twoKeys.isError === true);
     const halfMatrix = await client.callTool({ name: "key_down", arguments: { session_id: sid2, col: 1 } });
     ok("and col needs row", halfMatrix.isError === true);
+    const farInkey = await client.callTool({ name: "key_down", arguments: { session_id: sid2, inkey: -1000 } });
+    ok("and an INKEY number must name a matrix key", farInkey.isError === true);
     ok("nothing is left held after the refusals", (await keyboard()).held_keys.length === 0);
 
     await callTool(client, "destroy_machine", { session_id: sid2 });
