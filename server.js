@@ -106,6 +106,33 @@ function secondsOfCycles(modelName, seconds) {
     return seconds * findModel(modelName).cyclesPerSecond;
 }
 
+/**
+ * Which memory a read or write hits where the map is paged: the sideways
+ * bank at &8000 to &BFFF, and on a Master shadow or main RAM at &3000 to
+ * &7FFF. Left out, the access sees whatever the machine has paged in.
+ */
+const PagingParams = {
+    bank: z
+        .number()
+        .int()
+        .min(0)
+        .max(15)
+        .optional()
+        .describe("Sideways ROM/RAM bank to page at &8000–&BFFF for this access, instead of the one ROMSEL selects"),
+    shadow: z
+        .boolean()
+        .optional()
+        .describe("On a Master, read shadow RAM (true) or main RAM (false) at &3000–&7FFF, whatever ACCCON says"),
+};
+
+/** What the machine has paged in, and any override this access used, so the caller knows what it read. */
+function pagingReport(session, { bank, shadow }) {
+    const paging = session.pagingState();
+    if (bank !== undefined) paging.bank = bank;
+    if (shadow !== undefined) paging.shadow = shadow;
+    return paging;
+}
+
 const DiscParams = {
     image_path: z
         .string()
@@ -410,15 +437,18 @@ server.tool(
 
 server.tool(
     "read_memory",
-    "Read bytes from the BBC Micro's memory map. " + "Returns an array of decimal byte values plus a hex dump.",
+    "Read bytes from the BBC Micro's memory map. Returns an array of decimal byte values plus a hex dump, " +
+        "and paging: romsel (the sideways bank at &8000–&BFFF) and on a Master acccon, so a read of paged " +
+        "memory says which bank it came from. Pass bank or shadow to read a particular one instead.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
         address: z.number().int().min(0).max(0xffff).describe("Start address (0–65535)"),
         length: z.number().int().min(1).max(256).default(16).describe("Number of bytes to read (max 256)"),
+        ...PagingParams,
     },
-    async ({ session_id, address, length }) => {
+    async ({ session_id, address, length, bank, shadow }) => {
         const session = requireSession(session_id);
-        const bytes = session.readMemory(address, length);
+        const bytes = session.readMemory(address, length, { bank, shadow });
         const hexDump = formatHexDump(address, bytes);
         return {
             content: [
@@ -429,6 +459,7 @@ server.tool(
                         addressHex: `0x${address.toString(16).toUpperCase()}`,
                         bytes,
                         hexDump,
+                        paging: pagingReport(session, { bank, shadow }),
                     }),
                 },
             ],
@@ -443,15 +474,17 @@ server.tool(
 server.tool(
     "write_memory",
     "Write bytes into the BBC Micro's memory. " +
-        "Useful for poking machine code, modifying variables, or patching running programs.",
+        "Useful for poking machine code, modifying variables, or patching running programs. " +
+        "Pass bank or shadow to write into a particular bank, as for read_memory.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
         address: z.number().int().min(0).max(0xffff).describe("Start address (0–65535)"),
         bytes: z.array(z.number().int().min(0).max(255)).describe("Array of byte values to write"),
+        ...PagingParams,
     },
-    async ({ session_id, address, bytes }) => {
+    async ({ session_id, address, bytes, bank, shadow }) => {
         const session = requireSession(session_id);
-        session.writeMemory(address, bytes);
+        session.writeMemory(address, bytes, { bank, shadow });
         return {
             content: [
                 {
@@ -1033,23 +1066,31 @@ server.tool(
 server.tool(
     "save_memory",
     "Save a range of the BBC Micro's memory to a file on the host filesystem. " +
-        "Much faster than multiple read_memory calls for large dumps.",
+        "Much faster than multiple read_memory calls for large dumps. Reports paging as read_memory does, " +
+        "and takes bank or shadow the same way.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
         address: z.number().min(0).max(65535).describe("Start address (0–65535)"),
         length: z.number().min(1).max(65536).describe("Number of bytes to save"),
         path: z.string().describe("Absolute path to write the file to"),
+        ...PagingParams,
     },
-    async ({ session_id, address, length, path: filePath }) => {
+    async ({ session_id, address, length, path: filePath, bank, shadow }) => {
         const session = requireSession(session_id);
-        const bytes = new Uint8Array(length);
-        for (let i = 0; i < length; i++) bytes[i] = session._machine.readbyte(address + i);
-        writeFileSync(filePath, bytes);
+        writeFileSync(filePath, Uint8Array.from(session.readMemory(address, length, { bank, shadow })));
         return {
-            content: [{
-                type: "text",
-                text: `Saved ${length} bytes from $${address.toString(16).padStart(4, "0")} to ${filePath}`,
-            }],
+            content: [
+                {
+                    type: "text",
+                    text: JSON.stringify({
+                        saved: length,
+                        address,
+                        addressHex: `0x${address.toString(16).toUpperCase()}`,
+                        path: filePath,
+                        paging: pagingReport(session, { bank, shadow }),
+                    }),
+                },
+            ],
         };
     },
 );
