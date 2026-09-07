@@ -151,8 +151,8 @@ For multi-step interaction (debugging, iterative development):
 | `type_input`       | Type text at the current keyboard prompt (RETURN is automatic) |
 | `run_until_prompt` | Run until BASIC/OS prompt, return captured screen text         |
 | `screenshot`       | Capture the last fully-painted frame as a PNG image, plus the frame counter |
-| `read_memory`      | Read bytes from the memory map (with hex dump)                 |
-| `write_memory`     | Poke bytes into memory                                         |
+| `read_memory`      | Read bytes from the memory map (with hex dump), reporting which bank was paged; `bank` / `shadow` pick another |
+| `write_memory`     | Poke bytes into memory, into a chosen `bank` or `shadow` RAM if asked |
 | `read_registers`   | Get 6502 CPU registers (PC, A, X, Y, S, P), the frame counter and elapsed cycles |
 | `run_for_cycles`   | Run N CPU cycles, or up to a breakpoint; reports `cycles_run`, the count actually run (drains output by default — use `clear: false` to peek without consuming) |
 | `run_frames`       | Advance N painted frames — use this, not `run_for_cycles`, to step the display |
@@ -167,6 +167,15 @@ For multi-step interaction (debugging, iterative development):
 | `restore_state`    | Put a session back to a saved state (same model only)          |
 | `list_states`      | List saved states, newest first                                |
 | `delete_state`     | Discard a saved state and free its memory                      |
+
+### Paged memory
+
+`read_memory` and `save_memory` read whatever the machine has paged in, so
+every response carries `paging`: `romsel`, the sideways bank at `&8000`–`&BFFF`,
+and on a Master `acccon`, whose bit 2 puts shadow RAM at `&3000`–`&7FFF`. To
+sample a particular bank regardless, pass `bank` (0–15) or, on a Master,
+`shadow` (true for shadow RAM, false for main); the map is put back afterwards.
+`write_memory` takes the same two.
 
 ### Checkpointing with save_state
 

@@ -8,7 +8,8 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { findModel } from "jsbeeb";
-import { writeFileSync } from "fs";
+import { writeFileSync, readFileSync, unlinkSync } from "fs";
+import { tmpdir } from "os";
 import { resolve, dirname } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 
@@ -144,6 +145,35 @@ async function main() {
     const mem2 = await callTool(client, "read_memory", { session_id, address: 0x700, length: 4 });
     const mem2data = JSON.parse(textContent(mem2));
     ok("write_memory round-trips", JSON.stringify(mem2data.bytes) === JSON.stringify([0xde, 0xad, 0xbe, 0xef]));
+
+    // paged memory: a read says which bank it saw, and can be pointed at another
+    ok("read_memory reports the bank paged in", typeof mem2data.paging?.romsel === "number");
+    ok("and no ACCCON on a BBC B", mem2data.paging.acccon === undefined);
+    const readBank = async (bank) =>
+        JSON.parse(
+            textContent(await callTool(client, "read_memory", { session_id, address: 0x8000, length: 3, bank })),
+        );
+    await callTool(client, "write_memory", { session_id, address: 0x8000, bytes: [1, 2, 3], bank: 4 });
+    await callTool(client, "write_memory", { session_id, address: 0x8000, bytes: [7, 8, 9], bank: 5 });
+    const bank4 = await readBank(4);
+    ok("a sideways RAM bank reads back what was written to it", JSON.stringify(bank4.bytes) === "[1,2,3]");
+    ok("and another bank holds its own", JSON.stringify((await readBank(5)).bytes) === "[7,8,9]");
+    ok("the read says which bank it used", bank4.paging.bank === 4);
+    const pagedBack = JSON.parse(
+        textContent(await callTool(client, "read_memory", { session_id, address: 0x8000, length: 3 })),
+    );
+    ok("the machine's own bank is paged back afterwards", pagedBack.paging.romsel === mem2data.paging.romsel);
+    const noShadow = await client.callTool({
+        name: "read_memory",
+        arguments: { session_id, address: 0x3000, length: 1, shadow: true },
+    });
+    ok("a BBC B has no shadow RAM to read", noShadow.isError === true);
+    const savePath = resolve(tmpdir(), `jsbeeb-mcp-test-${process.pid}.bin`);
+    const saveArgs = { session_id, address: 0x8000, length: 3, path: savePath, bank: 5 };
+    const saved = JSON.parse(textContent(await callTool(client, "save_memory", saveArgs)));
+    ok("save_memory writes the bank asked for", JSON.stringify([...readFileSync(savePath)]) === "[7,8,9]");
+    ok("and reports it", saved.paging.bank === 5 && saved.saved === 3);
+    unlinkSync(savePath);
 
     // read_registers
     const regsResult = await callTool(client, "read_registers", { session_id });
@@ -443,6 +473,17 @@ async function main() {
         arguments: { session_id: masterSid, state_id },
     });
     ok("restoring across models is refused", crossModel.isError === true);
+
+    // shadow RAM on the Master, apart from main RAM
+    const shadowArgs = (shadow) => ({ session_id: masterSid, address: 0x3000, shadow });
+    await callTool(client, "write_memory", { ...shadowArgs(true), bytes: [10, 20] });
+    await callTool(client, "write_memory", { ...shadowArgs(false), bytes: [30, 40] });
+    const readShadow = async (shadow) =>
+        JSON.parse(textContent(await callTool(client, "read_memory", { ...shadowArgs(shadow), length: 2 })));
+    const shadowRead = await readShadow(true);
+    ok("shadow RAM reads back apart from main", JSON.stringify(shadowRead.bytes) === "[10,20]");
+    ok("and main apart from shadow", JSON.stringify((await readShadow(false)).bytes) === "[30,40]");
+    ok("a Master reports ACCCON", typeof shadowRead.paging.acccon === "number" && shadowRead.paging.shadow === true);
 
     const overLongLabel = await client.callTool({
         name: "save_state",
