@@ -214,8 +214,9 @@ async function main() {
 
     // Press 'A' via key_down, run cycles, release, then press RETURN to flush the line.
     // Use clear=false on intermediate run_for_cycles so output accumulates.
-    const kdResult = await callTool(client, "key_down", { session_id: sid2, key: "A" });
-    ok("key_down returns confirmation", textContent(kdResult).includes("Key down"));
+    const kdResult = JSON.parse(textContent(await callTool(client, "key_down", { session_id: sid2, key: "A" })));
+    ok("key_down reports the matrix key that went down", kdResult.pressed?.[0]?.name === "A");
+    ok("with the internal key number a name maps to", kdResult.pressed?.[0]?.internal === 0x41);
     await callTool(client, "run_for_cycles", { session_id: sid2, cycles: 200000, clear: false });
     await callTool(client, "key_up", { session_id: sid2, key: "A" });
     // Press RETURN to flush the line — VDU capture buffers printable chars until CR/LF
@@ -348,6 +349,38 @@ async function main() {
     const afterBoot = await keyboard();
     ok("and the keyboard is clear afterwards", afterBoot.held_keys.length === 0 && afterBoot.typing_pending === false);
 
+    // --- keys by number ---
+    console.log("\n--- keys by number ---");
+    const pressAndRelease = async (selector) => {
+        const down = JSON.parse(textContent(await callTool(client, "key_down", { session_id: sid2, ...selector })));
+        await callTool(client, "run_for_cycles", { session_id: sid2, cycles: 200000, clear: false });
+        const up = JSON.parse(textContent(await callTool(client, "key_up", { session_id: sid2, ...selector })));
+        await callTool(client, "run_for_cycles", { session_id: sid2, cycles: 200000, clear: false });
+        return { down, up };
+    };
+    const byInternal = await pressAndRelease({ internal: 66 });
+    ok("a key pressed by internal number is named", byInternal.down.pressed[0]?.name === "X");
+    ok("and released by it", byInternal.up.released[0]?.name === "X");
+    const byInkey = await pressAndRelease({ inkey: -67 });
+    ok("a key pressed by INKEY number is named", byInkey.down.pressed[0]?.name === "X");
+    const byMatrix = await pressAndRelease({ col: 1, row: 4 });
+    ok("a key pressed by matrix position is named", byMatrix.down.pressed[0]?.name === "A");
+    await pressAndRelease({ key: "RETURN" });
+    const numbered = JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id: sid2 })));
+    console.log("typed by number:", JSON.stringify(numbered.screenText));
+    ok("the keys reached BASIC", numbered.screenText.includes("XXA"));
+
+    const noKey = await client.callTool({ name: "key_down", arguments: { session_id: sid2 } });
+    ok("key_down needs a key", noKey.isError === true);
+    const twoKeys = await client.callTool({
+        name: "key_down",
+        arguments: { session_id: sid2, key: "A", internal: 66 },
+    });
+    ok("but only one", twoKeys.isError === true);
+    const halfMatrix = await client.callTool({ name: "key_down", arguments: { session_id: sid2, col: 1 } });
+    ok("and col needs row", halfMatrix.isError === true);
+    ok("nothing is left held after the refusals", (await keyboard()).held_keys.length === 0);
+
     await callTool(client, "destroy_machine", { session_id: sid2 });
 
     // --- boot_disc ---
@@ -426,6 +459,8 @@ async function main() {
     const atomResult = await callTool(client, "create_machine", { model: "Atom" });
     const { session_id: atomSid, boot_output: atomBoot } = JSON.parse(textContent(atomResult));
     ok("Atom boots to its prompt", atomBoot.screenText.includes("ACORN ATOM"));
+    const atomInternal = await client.callTool({ name: "key_down", arguments: { session_id: atomSid, internal: 66 } });
+    ok("the Atom has no internal key numbers", atomInternal.isError === true);
     await callTool(client, "type_input", { session_id: atomSid, text: "PRINT 6*7" });
     const atomRun = JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id: atomSid })));
     console.log("Atom output:", JSON.stringify(atomRun.screenText));

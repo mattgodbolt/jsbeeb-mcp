@@ -157,8 +157,8 @@ For multi-step interaction (debugging, iterative development):
 | `run_for_cycles`   | Run N CPU cycles, or up to a breakpoint; reports `cycles_run`, the count actually run (drains output by default — use `clear: false` to peek without consuming) |
 | `run_frames`       | Advance N painted frames — use this, not `run_for_cycles`, to step the display |
 | `load_disc`        | Put a disc in drive 0 or 1, from a file, an archive or a URL   |
-| `key_down`         | Press and hold a key (e.g. `SHIFT`, `A`, `RETURN`, `F0`)      |
-| `key_up`           | Release a previously held key                                  |
+| `key_down`         | Press and hold a key, by name (`SHIFT`, `A`, `RETURN`, `F0`) or by BBC internal key number, INKEY number, or matrix col/row |
+| `key_up`           | Release a held key, named the same ways                        |
 | `keyboard_state`   | What is held (name, matrix position, internal key number) and whether typing is pending |
 | `release_all_keys` | Release everything and drop typing an interrupted `type_input` left pending |
 | `reset`            | Reset the machine; with `autoboot: true`, holds SHIFT during reset (SHIFT+BREAK) |
@@ -202,6 +202,12 @@ key_down SHIFT → reset → run_for_cycles (1s) → key_up SHIFT → run_until_
 Or use `reset` with `autoboot: true` / `boot_disc` / `run_disc` for common cases.
 Both report `shift_held_at_reset`, so a boot that lands in the tape filing
 system can be told apart from a disc that does not autoboot.
+
+Games read the keyboard matrix directly rather than through the OS, by internal
+key number (what `OSBYTE 121` takes). `key_down` and `key_up` accept `internal`,
+a negative `inkey` number, or `col` and `row`, so a test can press exactly the
+key the game's constant names; the response gives the name and numbers of the
+matrix key that moved, which also measures what a name maps to.
 
 A breakpoint that fires part way through `type_input` leaves the rest of the
 text still to be typed, and the typist keeps the keyboard until it is. Until
