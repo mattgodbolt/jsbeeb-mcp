@@ -97,6 +97,70 @@ function resolveKeyCode(keyName) {
     return code;
 }
 
+/**
+ * How key_down and key_up name a key: by name, through the host key map as
+ * typing does; or straight onto the keyboard matrix, by BBC internal key
+ * number, INKEY number, or column and row, so a test can press exactly the
+ * key a program's own scan reads.
+ */
+const KeySelector = {
+    key: z
+        .string()
+        .optional()
+        .describe(
+            "Key name: SHIFT, CTRL, RETURN, SPACE, DELETE, BACKSPACE, ESCAPE, TAB, CAPS_LOCK, " +
+                "UP, DOWN, LEFT, RIGHT, F0–F9, A–Z, 0–9, or punctuation such as COMMA, PERIOD, SLASH",
+        ),
+    internal: z
+        .number()
+        .int()
+        .min(0)
+        .max(0x7f)
+        .optional()
+        .describe("BBC internal key number, as OSBYTE 121 and a game's keyboard scan use (X is 66, SPACE is 98)"),
+    inkey: z
+        .number()
+        .int()
+        .min(-0x80)
+        .max(-1)
+        .optional()
+        .describe("Negative INKEY number, -1 to -128 (X is -67, SPACE is -99); the internal number is -inkey - 1"),
+    col: z.number().int().min(0).max(15).optional().describe("Keyboard matrix column, given with row"),
+    row: z.number().int().min(0).max(15).optional().describe("Keyboard matrix row, given with col"),
+};
+
+/**
+ * The one way the caller named the key, as `{ code }` (a host keyCode for the
+ * mapped path) or `{ colRow }` (a matrix position for the raw path).
+ */
+function resolveKey(session, { key, internal, inkey, col, row }) {
+    if ((col === undefined) !== (row === undefined)) throw new Error("Give col and row together");
+    const given = [key, internal, inkey, col].filter((v) => v !== undefined).length;
+    if (given !== 1) throw new Error("Give exactly one of key, internal, inkey, or col and row");
+    if (key !== undefined) return { code: resolveKeyCode(key) };
+    if (col !== undefined) return { colRow: [col, row] };
+    if (keyTable(session) !== BBC) throw new Error("Internal key numbers are the BBC's; on the Atom give col and row");
+    const number = internal ?? -inkey - 1;
+    return { colRow: [number & 15, number >> 4] };
+}
+
+/** Presses or releases the key `selector` names, and reports which matrix keys changed. */
+function pressKey(session, selector, down) {
+    const target = resolveKey(session, selector);
+    requireKeyboard(session);
+    const before = new Set(session.heldKeys().map(String));
+    if (target.code !== undefined) {
+        if (down) session.keyDown(target.code);
+        else session.keyUp(target.code);
+    } else if (down) session.keyDownRaw(target.colRow);
+    else session.keyUpRaw(target.colRow);
+    const after = new Set(session.heldKeys().map(String));
+    const changed = down
+        ? session.heldKeys().filter((k) => !before.has(String(k)))
+        : [...before].filter((k) => !after.has(k)).map((k) => k.split(",").map(Number));
+    return changed.map((k) => describeKey(session, k));
+}
+
 // Every machine jsbeeb can build, by the short name findModel takes. The Tube models are
 // second processors, not machines, and are the only ones without a short name.
 const MachineModels = allModels.filter((m) => m.synonyms.length > 0);
@@ -634,19 +698,18 @@ server.tool(
 
 server.tool(
     "key_down",
-    "Press and hold a key on the BBC Micro keyboard. " +
-        "Use key_up to release it later. Key names: SHIFT, CTRL, RETURN, SPACE, DELETE, " +
-        "BACKSPACE, ESCAPE, TAB, CAPS_LOCK, UP, DOWN, LEFT, RIGHT, F0–F9, A–Z, 0–9.",
+    "Press and hold a key on the keyboard; use key_up to release it later. Name the key one way: " +
+        "by name, or straight onto the matrix by BBC internal key number, INKEY number, or col and row, " +
+        "which is how to press exactly the key a game's own keyboard scan reads. Reports the matrix " +
+        "keys that went down, with name and numbers, so a name can be measured against the numbers.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
-        key: z.string().describe("Key name (e.g. 'SHIFT', 'A', 'RETURN', 'F0')"),
+        ...KeySelector,
     },
-    async ({ session_id, key }) => {
+    async ({ session_id, ...selector }) => {
         const session = requireSession(session_id);
-        const code = resolveKeyCode(key);
-        requireKeyboard(session);
-        session.keyDown(code);
-        return { content: [{ type: "text", text: `Key down: ${key}` }] };
+        const pressed = pressKey(session, selector, true);
+        return { content: [{ type: "text", text: JSON.stringify({ pressed }) }] };
     },
 );
 
@@ -656,17 +719,15 @@ server.tool(
 
 server.tool(
     "key_up",
-    "Release a previously held key on the BBC Micro keyboard.",
+    "Release a held key, named any of the ways key_down takes. Reports the matrix keys that came up.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
-        key: z.string().describe("Key name (e.g. 'SHIFT', 'A', 'RETURN', 'F0')"),
+        ...KeySelector,
     },
-    async ({ session_id, key }) => {
+    async ({ session_id, ...selector }) => {
         const session = requireSession(session_id);
-        const code = resolveKeyCode(key);
-        requireKeyboard(session);
-        session.keyUp(code);
-        return { content: [{ type: "text", text: `Key up: ${key}` }] };
+        const released = pressKey(session, selector, false);
+        return { content: [{ type: "text", text: JSON.stringify({ released }) }] };
     },
 );
 
