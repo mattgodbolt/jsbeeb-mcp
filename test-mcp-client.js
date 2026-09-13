@@ -395,10 +395,17 @@ async function main() {
     ok("a key pressed by INKEY number is named", byInkey.down.pressed[0]?.name === "X");
     const byMatrix = await pressAndRelease({ col: 1, row: 4 });
     ok("a key pressed by matrix position is named", byMatrix.down.pressed[0]?.name === "A");
+    const byBeebName = await pressAndRelease({ key: "COLON_STAR" });
+    ok("a key pressed by the machine's own name is that key", byBeebName.down.pressed[0]?.name === "COLON_STAR");
+    await pressAndRelease({ key: "K1" });
     await pressAndRelease({ key: "RETURN" });
     const numbered = JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id: sid2 })));
     console.log("typed by number:", JSON.stringify(numbered.screenText));
-    ok("the keys reached BASIC", numbered.screenText.includes("XXA"));
+    ok("the keys reached BASIC", numbered.screenText.includes("XXA:1"));
+
+    const hostName = await client.callTool({ name: "key_down", arguments: { session_id: sid2, key: "QUOTE" } });
+    ok("a host keyboard's name for a key is refused", hostName.isError === true);
+    ok("and the refusal lists the machine's names", textContent(hostName).includes("COLON_STAR"));
 
     const noKey = await client.callTool({ name: "key_down", arguments: { session_id: sid2 } });
     ok("key_down needs a key", noKey.isError === true);
