@@ -157,7 +157,7 @@ For multi-step interaction (debugging, iterative development):
 | `run_for_cycles`   | Run N CPU cycles, or up to a breakpoint; reports `cycles_run`, the count actually run (drains output by default — use `clear: false` to peek without consuming) |
 | `run_frames`       | Advance N painted frames — use this, not `run_for_cycles`, to step the display |
 | `load_disc`        | Put a disc in drive 0 or 1, from a file, an archive or a URL   |
-| `key_down`         | Press and hold a key, by name (`SHIFT`, `A`, `RETURN`, `F0`) or by BBC internal key number, INKEY number, or matrix col/row |
+| `key_down`         | Press and hold a key, by the machine's name for it (`SHIFT`, `A`, `RETURN`, `F0`, `COLON_STAR`) or by BBC internal key number, INKEY number, or matrix col/row |
 | `key_up`           | Release a held key, named the same ways                        |
 | `keyboard_state`   | What is held (name, matrix position, internal key number) and whether typing is pending |
 | `release_all_keys` | Release everything and drop typing an interrupted `type_input` left pending |
@@ -224,10 +224,17 @@ then `key_down` and `key_up` refuse rather than dropping the key; `reset` and
 `boot_disc` drop the pending text themselves. `keyboard_state` shows what is
 held and whether typing is pending, and `release_all_keys` clears both.
 
-**Key names:** `SHIFT`, `CTRL`, `RETURN`, `SPACE`, `DELETE`, `BACKSPACE`,
-`ESCAPE`, `TAB`, `CAPS_LOCK`, `UP`, `DOWN`, `LEFT`, `RIGHT`, `F0`–`F9`,
-`A`–`Z`, `0`–`9`, plus punctuation (`COMMA`, `PERIOD`, `SLASH`, `SEMICOLON`,
-`QUOTE`, `MINUS`, `EQUALS`, etc.).
+**Key names** are the machine's own, the same ones `keyboard_state` reports,
+and every press lands on the keyboard matrix directly with no host keyboard
+layout in between. On a BBC: `SHIFT`, `CTRL`, `RETURN`, `SPACE`, `DELETE`,
+`ESCAPE`, `TAB`, `CAPSLOCK`, `SHIFTLOCK`, `COPY`, `UP`, `DOWN`, `LEFT`,
+`RIGHT`, `F0`–`F9`, `A`–`Z`, `K0`–`K9` for the digits, the engraved
+punctuation keys (`COMMA`, `PERIOD`, `SLASH`, `MINUS`, `SEMICOLON_PLUS`,
+`COLON_STAR`, `AT`, `LEFT_SQUARE_BRACKET`, `RIGHT_SQUARE_BRACKET`,
+`UNDERSCORE_POUND`, `HAT_TILDE`, `PIPE_BACKSLASH`) and the Master's numpad
+(`NUMPAD0`–`NUMPAD9`, `NUMPADENTER`, etc.). The Atom has its own set (`REPT`,
+`LOCK`, `COPY`, `MINUS_EQUALS`, etc.); an unknown name is refused with the
+full list for the model.
 
 ## What works
 

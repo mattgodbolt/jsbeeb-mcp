@@ -31,85 +31,24 @@ import { ATOM } from "jsbeeb/src/keymap-atom.js";
 import { writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-// ---------------------------------------------------------------------------
-// BBC key name → browser keyCode mapping
-// ---------------------------------------------------------------------------
-
-const KeyNameToCode = {
-    // Modifiers
-    SHIFT: 16,
-    CTRL: 17,
-    // Special keys
-    RETURN: 13,
-    SPACE: 32,
-    DELETE: 46,
-    BACKSPACE: 8,
-    ESCAPE: 27,
-    TAB: 9,
-    CAPS_LOCK: 20,
-    // Arrow keys
-    UP: 38,
-    DOWN: 40,
-    LEFT: 37,
-    RIGHT: 39,
-    // Function keys (BBC f0–f9 map to keyCodes 112–121)
-    F0: 112,
-    F1: 113,
-    F2: 114,
-    F3: 115,
-    F4: 116,
-    F5: 117,
-    F6: 118,
-    F7: 119,
-    F8: 120,
-    F9: 121,
-    // Punctuation / symbols
-    COMMA: 188,
-    PERIOD: 190,
-    SLASH: 191,
-    SEMICOLON: 186,
-    QUOTE: 222,
-    OPEN_BRACKET: 219,
-    CLOSE_BRACKET: 221,
-    BACKSLASH: 220,
-    MINUS: 189,
-    EQUALS: 187,
-    BACKTICK: 192,
-};
-
-// Letters A–Z (keyCode = ASCII uppercase)
-for (let i = 0; i < 26; i++) {
-    const letter = String.fromCharCode(65 + i);
-    KeyNameToCode[letter] = 65 + i;
-}
-// Digits 0–9 (keyCode = ASCII '0'..'9')
-for (let i = 0; i <= 9; i++) {
-    KeyNameToCode[String(i)] = 48 + i;
-}
-
-function resolveKeyCode(keyName) {
-    const code = KeyNameToCode[keyName.toUpperCase()];
-    if (code === undefined) {
-        throw new Error(
-            `Unknown key name "${keyName}". Valid names: ${Object.keys(KeyNameToCode).join(", ")}`,
-        );
-    }
-    return code;
-}
-
 /**
- * How key_down and key_up name a key: by name, through the host key map as
- * typing does; or straight onto the keyboard matrix, by BBC internal key
- * number, INKEY number, or column and row, so a test can press exactly the
- * key a program's own scan reads.
+ * How key_down and key_up name a key: by the machine's own name for it, the
+ * one keyboard_state reports; or by BBC internal key number, INKEY number, or
+ * column and row, so a test can press exactly the key a program's own scan
+ * reads. Every way lands on the keyboard matrix directly, with no host
+ * keyboard in between.
  */
 const KeySelector = {
     key: z
         .string()
         .optional()
         .describe(
-            "Key name: SHIFT, CTRL, RETURN, SPACE, DELETE, BACKSPACE, ESCAPE, TAB, CAPS_LOCK, " +
-                "UP, DOWN, LEFT, RIGHT, F0–F9, A–Z, 0–9, or punctuation such as COMMA, PERIOD, SLASH",
+            "The key as the machine's own keyboard names it, which is how keyboard_state reports it. On a " +
+                "BBC or Master: SHIFT, CTRL, RETURN, SPACE, DELETE, ESCAPE, TAB, CAPSLOCK, SHIFTLOCK, COPY, UP, " +
+                "DOWN, LEFT, RIGHT, F0–F9, A–Z, K0–K9 for the digits, and the engraved punctuation keys such as " +
+                "COMMA, SEMICOLON_PLUS, COLON_STAR, AT, HAT_TILDE. The Atom has its own set: SHIFT, CTRL, " +
+                "RETURN, REPT, LOCK, COPY, DELETE, ESCAPE, arrows, A–Z, K0–K9, MINUS_EQUALS and the like. An " +
+                "unknown name is refused with the full list for the model",
         ),
     internal: z
         .number()
@@ -129,31 +68,36 @@ const KeySelector = {
     row: z.number().int().min(0).max(15).optional().describe("Keyboard matrix row, given with col"),
 };
 
-/**
- * The one way the caller named the key, as `{ code }` (a host keyCode for the
- * mapped path) or `{ colRow }` (a matrix position for the raw path).
- */
+/** The matrix position of the key `name` in the model's own key table. */
+function resolveKeyName(session, name) {
+    const table = keyTable(session);
+    const upper = name.toUpperCase();
+    // The tables are plain objects, so "constructor" would otherwise resolve to a function.
+    if (!Object.hasOwn(table, upper)) {
+        throw new Error(`Unknown key name "${name}". Valid names: ${Object.keys(table).join(", ")}`);
+    }
+    return table[upper];
+}
+
+/** The matrix position of the one key the caller named. */
 function resolveKey(session, { key, internal, inkey, col, row }) {
     if ((col === undefined) !== (row === undefined)) throw new Error("Give col and row together");
     const given = [key, internal, inkey, col].filter((v) => v !== undefined).length;
     if (given !== 1) throw new Error("Give exactly one of key, internal, inkey, or col and row");
-    if (key !== undefined) return { code: resolveKeyCode(key) };
-    if (col !== undefined) return { colRow: [col, row] };
+    if (key !== undefined) return resolveKeyName(session, key);
+    if (col !== undefined) return [col, row];
     if (keyTable(session) !== BBC) throw new Error("Internal key numbers are the BBC's; on the Atom give col and row");
     const number = internal ?? -inkey - 1;
-    return { colRow: [number & 15, number >> 4] };
+    return [number & 15, number >> 4];
 }
 
 /** Presses or releases the key `selector` names, and reports which matrix keys changed. */
 function pressKey(session, selector, down) {
-    const target = resolveKey(session, selector);
+    const colRow = resolveKey(session, selector);
     requireKeyboard(session);
     const before = new Set(session.heldKeys().map(String));
-    if (target.code !== undefined) {
-        if (down) session.keyDown(target.code);
-        else session.keyUp(target.code);
-    } else if (down) session.keyDownRaw(target.colRow);
-    else session.keyUpRaw(target.colRow);
+    if (down) session.keyDownRaw(colRow);
+    else session.keyUpRaw(colRow);
     const after = new Set(session.heldKeys().map(String));
     const changed = down
         ? session.heldKeys().filter((k) => !before.has(String(k)))
@@ -276,14 +220,14 @@ function isShiftHeld(session) {
  */
 async function autobootMachine(session, hard = true) {
     const cancelledTyping = cancelPendingTyping(session);
-    session.keyDown(16); // SHIFT
+    session.keyDownRaw(keyTable(session).SHIFT);
     try {
         session.reset(hard);
         const shiftHeld = isShiftHeld(session);
         await session.runFor(secondsOfCycles(session.modelName, 1));
         return { shift_held_at_reset: shiftHeld, cancelled_typing: cancelledTyping };
     } finally {
-        session.keyUp(16);
+        session.keyUpRaw(keyTable(session).SHIFT);
     }
 }
 
@@ -732,9 +676,10 @@ server.tool(
 server.tool(
     "key_down",
     "Press and hold a key on the keyboard; use key_up to release it later. Name the key one way: " +
-        "by name, or straight onto the matrix by BBC internal key number, INKEY number, or col and row, " +
-        "which is how to press exactly the key a game's own keyboard scan reads. Reports the matrix " +
-        "keys that went down, with name and numbers, so a name can be measured against the numbers.",
+        "by the machine's own name for it, or by BBC internal key number, INKEY number, or col and row, " +
+        "which is how to press exactly the key a game's own keyboard scan reads. Every way presses the " +
+        "matrix key itself, so what goes down is what keyboard_state reports. Reports the key that went " +
+        "down, with name and numbers.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
         ...KeySelector,
