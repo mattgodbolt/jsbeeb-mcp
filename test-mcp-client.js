@@ -406,6 +406,11 @@ async function main() {
     const hostName = await client.callTool({ name: "key_down", arguments: { session_id: sid2, key: "QUOTE" } });
     ok("a host keyboard's name for a key is refused", hostName.isError === true);
     ok("and the refusal lists the machine's names", textContent(hostName).includes("COLON_STAR"));
+    const inherited = await client.callTool({
+        name: "key_down",
+        arguments: { session_id: sid2, key: "constructor" },
+    });
+    ok("a name the table only inherits is refused too", inherited.isError === true);
 
     const noKey = await client.callTool({ name: "key_down", arguments: { session_id: sid2 } });
     ok("key_down needs a key", noKey.isError === true);
@@ -492,6 +497,10 @@ async function main() {
     ok("and main apart from shadow", JSON.stringify((await readShadow(false)).bytes) === "[30,40]");
     ok("a Master reports ACCCON", typeof shadowRead.paging.acccon === "number" && shadowRead.paging.shadow === true);
 
+    const numpad = JSON.parse(textContent(await callTool(client, "key_down", { session_id: masterSid, key: "NUMPAD7" })));
+    ok("a Master presses a numpad key by name", numpad.pressed[0]?.name === "NUMPAD7");
+    await callTool(client, "key_up", { session_id: masterSid, key: "NUMPAD7" });
+
     const overLongLabel = await client.callTool({
         name: "save_state",
         arguments: { session_id: sid4, label: "x".repeat(500) },
@@ -511,6 +520,14 @@ async function main() {
     ok("Atom boots to its prompt", atomBoot.screenText.includes("ACORN ATOM"));
     const atomInternal = await client.callTool({ name: "key_down", arguments: { session_id: atomSid, internal: 66 } });
     ok("the Atom has no internal key numbers", atomInternal.isError === true);
+    const atomRept = JSON.parse(textContent(await callTool(client, "key_down", { session_id: atomSid, key: "REPT" })));
+    ok("the Atom presses its own keys by name", atomRept.pressed[0]?.name === "REPT");
+    await callTool(client, "key_up", { session_id: atomSid, key: "REPT" });
+    const atomHeld = JSON.parse(textContent(await callTool(client, "keyboard_state", { session_id: atomSid })));
+    ok("and releases them", atomHeld.held_keys.length === 0);
+    const atomCaps = await client.callTool({ name: "key_down", arguments: { session_id: atomSid, key: "CAPSLOCK" } });
+    ok("a BBC-only name is refused on the Atom", atomCaps.isError === true);
+    ok("with the Atom's own list", textContent(atomCaps).includes("LOCK") && !textContent(atomCaps).includes("CAPSLOCK,"));
     await callTool(client, "type_input", { session_id: atomSid, text: "PRINT 6*7" });
     const atomRun = JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id: atomSid })));
     console.log("Atom output:", JSON.stringify(atomRun.screenText));

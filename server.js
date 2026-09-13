@@ -43,10 +43,12 @@ const KeySelector = {
         .string()
         .optional()
         .describe(
-            "The key as the machine's keyboard names it: SHIFT, CTRL, RETURN, SPACE, DELETE, ESCAPE, TAB, " +
-                "CAPSLOCK, SHIFTLOCK, COPY, UP, DOWN, LEFT, RIGHT, F0–F9, A–Z, K0–K9 for the digits, and the " +
-                "engraved punctuation keys such as COMMA, SEMICOLON_PLUS, COLON_STAR, AT, HAT_TILDE; an unknown " +
-                "name is refused with the full list for the model",
+            "The key as the machine's own keyboard names it, which is how keyboard_state reports it. On a " +
+                "BBC or Master: SHIFT, CTRL, RETURN, SPACE, DELETE, ESCAPE, TAB, CAPSLOCK, SHIFTLOCK, COPY, UP, " +
+                "DOWN, LEFT, RIGHT, F0–F9, A–Z, K0–K9 for the digits, and the engraved punctuation keys such as " +
+                "COMMA, SEMICOLON_PLUS, COLON_STAR, AT, HAT_TILDE. The Atom has its own set: SHIFT, CTRL, " +
+                "RETURN, REPT, LOCK, COPY, DELETE, ESCAPE, arrows, A–Z, K0–K9, MINUS_EQUALS and the like. An " +
+                "unknown name is refused with the full list for the model",
         ),
     internal: z
         .number()
@@ -69,11 +71,12 @@ const KeySelector = {
 /** The matrix position of the key `name` in the model's own key table. */
 function resolveKeyName(session, name) {
     const table = keyTable(session);
-    const colRow = table[name.toUpperCase()];
-    if (colRow === undefined) {
+    const upper = name.toUpperCase();
+    // The tables are plain objects, so "constructor" would otherwise resolve to a function.
+    if (!Object.hasOwn(table, upper)) {
         throw new Error(`Unknown key name "${name}". Valid names: ${Object.keys(table).join(", ")}`);
     }
-    return colRow;
+    return table[upper];
 }
 
 /** The matrix position of the one key the caller named. */
