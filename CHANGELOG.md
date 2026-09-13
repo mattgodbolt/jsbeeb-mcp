@@ -1,5 +1,16 @@
 # Changelog
 
+## [4.0.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v3.4.0...v4.0.0) (2026-09-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* key names are those of the BBC or Atom keyboard matrix, as keyboard_state reports them. CAPS_LOCK, BACKSPACE, bare digits, QUOTE, OPEN_BRACKET, CLOSE_BRACKET, SEMICOLON, EQUALS, BACKSLASH and BACKTICK are gone, replaced by CAPSLOCK, DELETE, K0-K9, COLON_STAR, LEFT_SQUARE_BRACKET, RIGHT_SQUARE_BRACKET, SEMICOLON_PLUS, HAT_TILDE, PIPE_BACKSLASH and AT. An unknown name is refused with the model's full list.
+
+### Features
+
+* key_down and key_up take the machine's own key names, on jsbeeb 2.0.0 ([#36](https://github.com/mattgodbolt/jsbeeb-mcp/issues/36)) ([e46209a](https://github.com/mattgodbolt/jsbeeb-mcp/commit/e46209a19db55bf309a41f0f40b2a6338d309c98))
+
 ## [3.4.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v3.3.0...v3.4.0) (2026-09-07)
 
 
