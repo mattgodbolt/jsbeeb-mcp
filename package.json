@@ -22,7 +22,7 @@
     "@modelcontextprotocol/sdk": "^1.30.0",
     "jsbeeb": "^2.0.0",
     "sharp": "^0.35.4",
-    "zod": "^4.5.4"
+    "zod": "^4.6.2"
   },
   "repository": {
     "type": "git",
