@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.0.1](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v4.0.0...v4.0.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* **deps:** require jsbeeb 2.3.1 ([#40](https://github.com/mattgodbolt/jsbeeb-mcp/issues/40)) ([c8184e4](https://github.com/mattgodbolt/jsbeeb-mcp/commit/c8184e4034165a704be498c526648d7fffee31da))
+
 ## [4.0.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v3.4.0...v4.0.0) (2026-09-13)
 
 
