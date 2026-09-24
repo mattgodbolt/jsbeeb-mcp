@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.0.2](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v4.0.1...v4.0.2) (2026-09-24)
+
+
+### Bug Fixes
+
+* **deps:** bump zod ([#38](https://github.com/mattgodbolt/jsbeeb-mcp/issues/38)) ([2178fd1](https://github.com/mattgodbolt/jsbeeb-mcp/commit/2178fd1c34afc6d390aa63bd63d491967cb68fa1))
+
 ## [4.0.1](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v4.0.0...v4.0.1) (2026-09-23)
 
 
