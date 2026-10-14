@@ -159,7 +159,7 @@ For multi-step interaction (debugging, iterative development):
 | `run_for_cycles`   | Run N CPU cycles, or up to a breakpoint; reports `cycles_run`, the count actually run (drains output by default — use `clear: false` to peek without consuming) |
 | `run_frames`       | Advance N painted frames — use this, not `run_for_cycles`, to step the display |
 | `load_disc`        | Put a disc in drive 0 or 1, from a file, an archive or a URL   |
-| `load_tape`        | Put a `.uef` tape in the cassette recorder and press PLAY, from a file or a URL |
+| `load_tape`        | Put a `.uef` tape (or a zip holding one) in the cassette recorder and press PLAY, from a file or a URL |
 | `key_down`         | Press and hold a key, by the machine's name for it (`SHIFT`, `A`, `RETURN`, `F0`, `COLON_STAR`) or by BBC internal key number, INKEY number, or matrix col/row |
 | `key_up`           | Release a held key, named the same ways                        |
 | `keyboard_state`   | What is held (name, matrix position, internal key number) and whether typing is pending |

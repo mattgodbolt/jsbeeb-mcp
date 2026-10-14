@@ -412,7 +412,8 @@ server.tool(
     },
     async ({ session_id, image_path, image_ref }) => {
         const session = requireSession(session_id);
-        const { name, data, ignored } = await session.mediaResolver().resolve("tape", mediaRef({ image_path, image_ref }));
+        const ref = mediaRef({ image_path, image_ref });
+        const { name, data, ignored } = await session.mediaResolver().resolve("tape", ref);
         await session.loadTape(name, data);
         return { content: [{ type: "text", text: JSON.stringify({ tape: name, ignored }) }] };
     },
