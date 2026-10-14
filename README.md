@@ -193,7 +193,9 @@ create_machine → (load disc, set things up) → save_state → { state_id }
 
 The snapshot covers CPU, RAM, sideways RAM, video, sound chip, discs and tube.
 Memory, registers and the cycle count rewind on restore; breakpoints and the
-frame counter deliberately carry on.
+frame counter deliberately carry on. So does the tape: a state saved before a
+`CHAIN""` restores with the tape already past the program, so `load_tape` it
+again to read it a second time.
 
 Snapshots stay on the server and only their IDs cross the connection, so they
 are cheap to pass around but must be freed with `delete_state` when finished —
@@ -251,7 +253,8 @@ full list for the model.
 - ✅ Multiple concurrent sessions
 - ✅ Whole-machine state snapshots (checkpoint once, restore between attempts)
 - ✅ Disc image loading and autoboot: `.ssd`/`.dsd`/`.adf` files and zips, discs from the
-  Stairway to Hell and BBC disc archives, and any `http(s):` URL, into either drive
+  Stairway to Hell and BBC disc archives, the Bitshifters' demos, `github:` repos and any
+  `http(s):` URL, into either drive
 - ✅ Tapes: `.uef` files and zips, from a file or a URL
 - ✅ Low-level keyboard control (key_down/key_up)
 - ✅ Breakpoints on execute, read or write, optionally only while a given sideways bank is paged in
