@@ -119,8 +119,10 @@ Boot a BBC Micro, load a disc image, autoboot it (SHIFT+BREAK), return text
 output and an optional screenshot, then clean up. The disc is a file on the
 machine running the server (`image_path`), or a reference the way jsbeeb's own
 URLs name one (`image_ref`): `sth:Acornsoft/Elite.zip` for a Stairway to Hell disc,
-`hfe:<path>` for one from the BBC disc archive, or an `http(s):` or `file:`
-URL. Zips are opened and the disc inside used.
+`hfe:<path>` for one from the BBC disc archive, `bitshifters:<path>` for one
+of the Bitshifters' demos, `github:owner/repo[@ref]/path` for a file in a GitHub
+repo (`@~latest` takes the tag of its latest release), or an `http(s):` or
+`file:` URL. Zips are opened and the disc inside used.
 
 ```json
 {
@@ -148,7 +150,7 @@ For multi-step interaction (debugging, iterative development):
 | `create_machine`   | Boot any machine jsbeeb has (BBC B, Master 128, Acorn Atom), returns a `session_id`; optional `tube` attaches a 65C02 second processor |
 | `destroy_machine`  | Free a session                                                 |
 | `load_basic`       | Tokenise + load BBC BASIC source into PAGE                     |
-| `type_input`       | Type text at the current keyboard prompt (RETURN is automatic) |
+| `type_input`       | Type text at the current keyboard prompt, then one RETURN unless the text ends in a newline |
 | `run_until_prompt` | Run until BASIC/OS prompt, return captured screen text         |
 | `screenshot`       | Capture the last fully-painted frame as a PNG image, plus the frame counter |
 | `read_memory`      | Read bytes from the memory map (with hex dump), reporting which bank was paged; `bank` / `shadow` pick another |
@@ -157,10 +159,12 @@ For multi-step interaction (debugging, iterative development):
 | `run_for_cycles`   | Run N CPU cycles, or up to a breakpoint; reports `cycles_run`, the count actually run (drains output by default — use `clear: false` to peek without consuming) |
 | `run_frames`       | Advance N painted frames — use this, not `run_for_cycles`, to step the display |
 | `load_disc`        | Put a disc in drive 0 or 1, from a file, an archive or a URL   |
+| `load_tape`        | Put a `.uef` tape in the cassette recorder and press PLAY, from a file or a URL |
 | `key_down`         | Press and hold a key, by the machine's name for it (`SHIFT`, `A`, `RETURN`, `F0`, `COLON_STAR`) or by BBC internal key number, INKEY number, or matrix col/row |
 | `key_up`           | Release a held key, named the same ways                        |
 | `keyboard_state`   | What is held (name, matrix position, internal key number) and whether typing is pending |
 | `release_all_keys` | Release everything and drop typing an interrupted `type_input` left pending |
+| `flush_keyboard_buffer` | Throw away keys the OS has buffered but not yet read      |
 | `reset`            | Reset the machine; with `autoboot: true`, holds SHIFT during reset (SHIFT+BREAK) |
 | `boot_disc`        | Load a disc image (file, archive or URL) and autoboot it (SHIFT+BREAK) |
 | `save_state`       | Snapshot the whole machine server-side, returns a `state_id`   |
@@ -243,12 +247,14 @@ full list for the model.
 - ✅ Screenshots (real Video chip output → PNG via `sharp`)
 - ✅ Memory read/write
 - ✅ CPU register inspection
-- ✅ BBC B (8271 and 1770) and Master 128 models, booting DFS, ADFS or ANFS, and the Acorn Atom
+- ✅ BBC B (8271 and 1770, and a stock B with no sideways RAM) and Master 128 models, booting DFS, ADFS or ANFS, and the Acorn Atom
 - ✅ Multiple concurrent sessions
 - ✅ Whole-machine state snapshots (checkpoint once, restore between attempts)
 - ✅ Disc image loading and autoboot: `.ssd`/`.dsd`/`.adf` files and zips, discs from the
   Stairway to Hell and BBC disc archives, and any `http(s):` URL, into either drive
+- ✅ Tapes: `.uef` files and zips, from a file or a URL
 - ✅ Low-level keyboard control (key_down/key_up)
+- ✅ Breakpoints on execute, read or write, optionally only while a given sideways bank is paged in
 
 ## Known limitations
 

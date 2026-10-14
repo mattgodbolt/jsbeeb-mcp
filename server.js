@@ -13,6 +13,7 @@
  * Capabilities:
  *   - Boot any machine jsbeeb emulates (BBC B, BBC Master, Acorn Atom)
  *   - Load and run BBC BASIC programs
+ *   - Load discs and tapes
  *   - Type at the keyboard
  *   - Capture text output
  *   - Take screenshots (PNG, base64-encoded)
@@ -153,12 +154,14 @@ const DiscParams = {
         .optional()
         .describe(
             "A disc as jsbeeb's own URL names it: 'sth:Acornsoft/Elite.zip' for a Stairway to Hell disc, " +
-                "'hfe:<path>' for one from the BBC disc archive, or an http(s) or file: URL",
+                "'hfe:<path>' for one from the BBC disc archive, 'bitshifters:<path>' for one of the Bitshifters' " +
+                "demos, 'github:owner/repo[@ref]/path' for a file in a GitHub repo (ref '~latest' is the tag of " +
+                "its latest release), or an http(s) or file: URL",
         ),
 };
 
-/** The reference the session's resolver takes for a disc given by path or by reference. */
-function discRef({ image_path, image_ref }) {
+/** The reference the session's resolver takes for a disc or tape given by path or by reference. */
+function mediaRef({ image_path, image_ref }) {
     if (!image_path === !image_ref) throw new Error("Give exactly one of image_path or image_ref");
     return image_path ? pathToFileURL(image_path).href : image_ref;
 }
@@ -385,8 +388,33 @@ server.tool(
     },
     async ({ session_id, image_path, image_ref, drive }) => {
         const session = requireSession(session_id);
-        const { name, ignored } = await session.loadDiscImage(discRef({ image_path, image_ref }), drive);
+        const { name, ignored } = await session.loadDiscImage(mediaRef({ image_path, image_ref }), drive);
         return { content: [{ type: "text", text: JSON.stringify({ disc: name, drive, ignored }) }] };
+    },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: load_tape
+// ---------------------------------------------------------------------------
+
+server.tool(
+    "load_tape",
+    "Put a tape (.uef, or a zip holding one) in the cassette recorder and press PLAY. The Atom's tape " +
+        "runs at once; on a BBC or Master it runs when the OS starts the motor, so follow with type_input " +
+        "'*TAPE' and then 'CHAIN\"\"' (or '*RUN', 'LOAD\"\"').",
+    {
+        session_id: z.string().describe("Session ID from create_machine"),
+        image_path: z.string().optional().describe("Absolute path to a tape image on this machine"),
+        image_ref: z
+            .string()
+            .optional()
+            .describe("A tape by URL: http(s), file:, or 'github:owner/repo[@ref]/path' as for discs"),
+    },
+    async ({ session_id, image_path, image_ref }) => {
+        const session = requireSession(session_id);
+        const { name, data, ignored } = await session.mediaResolver().resolve("tape", mediaRef({ image_path, image_ref }));
+        await session.loadTape(name, data);
+        return { content: [{ type: "text", text: JSON.stringify({ tape: name, ignored }) }] };
     },
 );
 
@@ -416,7 +444,7 @@ server.tool(
 server.tool(
     "type_input",
     "Type text at the current keyboard prompt (simulates key presses). " +
-        "A newline/RETURN is automatically sent after the text. " +
+        "RETURN is pressed once after the text, unless the text already ends in a newline. " +
         "Use run_until_prompt after this to collect output. A breakpoint stops the typing part way: " +
         "completed is false, the breakpoint and registers are reported, and the rest is typed as the " +
         "machine runs on; until then key_down and key_up refuse, and release_all_keys drops it.",
@@ -745,6 +773,23 @@ server.tool(
 );
 
 // ---------------------------------------------------------------------------
+// Tool: flush_keyboard_buffer
+// ---------------------------------------------------------------------------
+
+server.tool(
+    "flush_keyboard_buffer",
+    "Empty the OS's keyboard buffer, throwing away keys pressed but not yet read, so a program " +
+        "that is busy when they go down does not read them later. Unlike OSBYTE 21 it leaves a " +
+        "function key's expansion still to come. Not on the Atom, whose OS has no buffer.",
+    { session_id: z.string().describe("Session ID from create_machine") },
+    async ({ session_id }) => {
+        const session = requireSession(session_id);
+        session.flushKeyboardBuffer();
+        return { content: [{ type: "text", text: "Keyboard buffer emptied." }] };
+    },
+);
+
+// ---------------------------------------------------------------------------
 // Tool: reset
 // ---------------------------------------------------------------------------
 
@@ -793,7 +838,7 @@ server.tool(
     },
     async ({ session_id, image_path, image_ref }) => {
         const session = requireSession(session_id);
-        const { name, ignored } = await session.loadDiscImage(discRef({ image_path, image_ref }));
+        const { name, ignored } = await session.loadDiscImage(mediaRef({ image_path, image_ref }));
         const booted = await autobootMachine(session);
         return {
             content: [{ type: "text", text: JSON.stringify({ disc: name, booting: true, ignored, ...booted }) }],
@@ -817,7 +862,7 @@ server.tool(
         screenshot: z.boolean().default(true).describe("Include a screenshot of the final screen state"),
     },
     async ({ image_path, image_ref, model, timeout_secs, screenshot: wantScreenshot }) => {
-        const ref = discRef({ image_path, image_ref });
+        const ref = mediaRef({ image_path, image_ref });
         const session = new MachineSession(model);
         try {
             await session.initialise();
@@ -1006,16 +1051,24 @@ server.tool(
     "Set a persistent breakpoint. The breakpoint stays active across multiple " +
         "run_for_cycles calls until removed with clear_breakpoint. When a breakpoint " +
         "fires, run_for_cycles returns early and reports which breakpoint was hit. " +
-        "Types: 'execute' (PC reaches address), 'read' (memory read), 'write' (memory write).",
+        "Types: 'execute' (PC reaches address), 'read' (memory read), 'write' (memory write). " +
+        "An address in &8000–&BFFF is in whichever sideways ROM is paged in; give bank to stop in one ROM only.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
         address: z.number().min(0).max(65535).describe("Address to break on (0–65535)"),
         type: z.enum(["execute", "read", "write"]).default("execute")
             .describe("Breakpoint type: execute (PC), read (memory read), write (memory write)"),
+        bank: z
+            .number()
+            .int()
+            .min(0)
+            .max(15)
+            .optional()
+            .describe("Only break while this sideways bank is paged in at &8000–&BFFF, to stop in one ROM"),
     },
-    async ({ session_id, address, type }) => {
+    async ({ session_id, address, type, bank }) => {
         const session = requireSession(session_id);
-        const id = session.addBreakpoint(type, address);
+        const id = session.addBreakpoint(type, address, { bank });
         return {
             content: [{
                 type: "text",
@@ -1024,6 +1077,7 @@ server.tool(
                     type,
                     address,
                     addressHex: `0x${address.toString(16).padStart(4, "0")}`,
+                    bank,
                 }),
             }],
         };

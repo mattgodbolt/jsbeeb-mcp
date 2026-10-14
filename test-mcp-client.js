@@ -40,6 +40,37 @@ function imageContent(result) {
     return result.content.find((c) => c.type === "image");
 }
 
+/** The CFS block checksum, high byte first as the tape holds it. */
+function cfsCrc(bytes) {
+    let crc = 0;
+    for (const byte of bytes) {
+        crc ^= byte << 8;
+        for (let bit = 0; bit < 8; bit++) crc = crc & 0x8000 ? (((crc ^ 0x0810) << 1) | 1) & 0xffff : (crc << 1) & 0xffff;
+    }
+    return [crc >> 8, crc & 0xff];
+}
+
+function uefChunk(id, data) {
+    return [id & 0xff, id >> 8, data.length & 0xff, data.length >> 8, 0, 0, ...data];
+}
+
+/** A UEF tape holding `program` as the one block of a BASIC file called `name`. */
+function basicTape(name, program) {
+    const lastBlockFlag = 0x80;
+    const header = [
+        ...Buffer.from(name), 0,
+        0x00, 0x19, 0xff, 0xff, // load address
+        0x23, 0x80, 0xff, 0xff, // execution address
+        0, 0, // block number
+        program.length & 0xff, program.length >> 8,
+        lastBlockFlag,
+        0, 0, 0, 0,
+    ];
+    const block = [0x2a, ...header, ...cfsCrc(header), ...program, ...cfsCrc(program)];
+    const carrierTone = uefChunk(0x110, [0xdc, 0x05]);
+    return Uint8Array.from([...Buffer.from("UEF File!\0"), 10, 0, ...carrierTone, ...uefChunk(0x100, block), ...carrierTone]);
+}
+
 async function callTool(client, name, args) {
     const result = await client.callTool({ name, arguments: args });
     if (result.isError) throw new Error(`Tool ${name} returned error: ${JSON.stringify(result.content)}`);
@@ -80,6 +111,8 @@ async function main() {
     ok("has boot_disc", toolNames.includes("boot_disc"));
     ok("has run_disc", toolNames.includes("run_disc"));
     ok("has run_frames", toolNames.includes("run_frames"));
+    ok("has load_tape", toolNames.includes("load_tape"));
+    ok("has flush_keyboard_buffer", toolNames.includes("flush_keyboard_buffer"));
 
     // Every model create_machine offers must be one jsbeeb actually knows, or the
     // client is invited to pick a name that fails deep inside MachineSession.
@@ -513,6 +546,55 @@ async function main() {
 
     for (const id of [sid4, sid5, masterSid]) await callTool(client, "destroy_machine", { session_id: id });
 
+    // --- Tape ---
+    console.log("\n--- tape ---");
+    const tapeSid = JSON.parse(textContent(await callTool(client, "create_machine", {}))).session_id;
+    const tapePath = resolve(tmpdir(), `jsbeeb-mcp-test-${process.pid}.uef`);
+    // 10 PRINT 6*7, tokenised
+    writeFileSync(tapePath, basicTape("SIXBY7", [0x0d, 0x00, 0x0a, 0x09, 0xf1, 0x20, 0x36, 0x2a, 0x37, 0x0d, 0xff]));
+    const loadedTape = JSON.parse(textContent(await callTool(client, "load_tape", { session_id: tapeSid, image_path: tapePath })));
+    unlinkSync(tapePath);
+    ok("load_tape names the tape", loadedTape.tape.endsWith(".uef"));
+    await callTool(client, "type_input", { session_id: tapeSid, text: "*TAPE" });
+    await callTool(client, "type_input", { session_id: tapeSid, text: 'CHAIN""' });
+    const tapeRun = JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id: tapeSid })));
+    ok("a program CHAINed from tape runs", /SIXBY7[\s\S]*\b42\b/.test(tapeRun.screenText));
+
+    // --- Keyboard buffer ---
+    console.log("\n--- keyboard buffer ---");
+    // Waits a second before reading, so a key pressed meanwhile sits in the buffer.
+    const waitThenRead = '10 T%=TIME:REPEAT UNTIL TIME>T%+100\n20 PRINT "GOT[";INKEY$(0);"]"\n';
+    const keyWhileWaiting = async (flush) => {
+        await callTool(client, "load_basic", { session_id: tapeSid, source: waitThenRead });
+        await callTool(client, "type_input", { session_id: tapeSid, text: "RUN" });
+        await callTool(client, "key_down", { session_id: tapeSid, key: "X" });
+        await callTool(client, "run_frames", { session_id: tapeSid, count: 5, clear: false });
+        await callTool(client, "key_up", { session_id: tapeSid, key: "X" });
+        if (flush) await callTool(client, "flush_keyboard_buffer", { session_id: tapeSid });
+        return JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id: tapeSid }))).screenText;
+    };
+    ok("a key pressed early waits in the buffer", (await keyWhileWaiting(false)).includes("GOT[X]"));
+    ok("flush_keyboard_buffer throws it away", (await keyWhileWaiting(true)).includes("GOT[]"));
+    await callTool(client, "destroy_machine", { session_id: tapeSid });
+
+    // --- Breakpoints in a sideways bank ---
+    console.log("\n--- breakpoints in a bank ---");
+    const bankSid = JSON.parse(textContent(await callTool(client, "create_machine", {}))).session_id;
+    const serviceEntry = 0x8003;
+    const dfsBank = 14;
+    const emptyBank = 4;
+    await callTool(client, "set_breakpoint", { session_id: bankSid, address: serviceEntry, bank: emptyBank });
+    const unbroken = JSON.parse(textContent(await callTool(client, "type_input", { session_id: bankSid, text: "*HELP" })));
+    ok("a breakpoint in a bank nothing runs from stays quiet", unbroken.completed === true && !unbroken.breakpoint);
+    await callTool(client, "clear_breakpoint", { session_id: bankSid, id: 0 });
+    const setInDfs = JSON.parse(
+        textContent(await callTool(client, "set_breakpoint", { session_id: bankSid, address: serviceEntry, bank: dfsBank })),
+    );
+    ok("set_breakpoint reports its bank", setInDfs.bank === dfsBank);
+    const broken = JSON.parse(textContent(await callTool(client, "type_input", { session_id: bankSid, text: "*HELP" })));
+    ok("one in DFS's bank stops at DFS's service entry", broken.breakpoint?.bank === dfsBank && broken.registers?.pc === serviceEntry);
+    await callTool(client, "destroy_machine", { session_id: bankSid });
+
     // --- Atom ---
     console.log("\n--- Atom ---");
     const atomResult = await callTool(client, "create_machine", { model: "Atom" });
@@ -532,6 +614,8 @@ async function main() {
     const atomRun = JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id: atomSid })));
     console.log("Atom output:", JSON.stringify(atomRun.screenText));
     ok("Atom types and runs to its prompt", atomRun.screenText.includes("42"));
+    const atomFlush = await client.callTool({ name: "flush_keyboard_buffer", arguments: { session_id: atomSid } });
+    ok("the Atom has no keyboard buffer to flush", atomFlush.isError === true);
     await callTool(client, "destroy_machine", { session_id: atomSid });
 
     // --- run_disc (one-shot) ---
