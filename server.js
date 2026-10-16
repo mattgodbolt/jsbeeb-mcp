@@ -34,7 +34,7 @@ import { writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 // stdout is the JSON-RPC channel, and jsbeeb logs with console.log.
-console.log = console.info = console.error;
+console.log = console.info = console.debug = console.error;
 
 /**
  * How key_down and key_up name a key: by the machine's own name for it, the
