@@ -107,6 +107,9 @@ async function main() {
     });
 
     const client = new Client({ name: "jsbeeb-test-client", version: "0.0.1" });
+    // The transport reports each stdout line that is not a JSON-RPC message here, then carries on.
+    const transportErrors = [];
+    client.onerror = (err) => transportErrors.push(err.message);
     await client.connect(transport);
     console.log("Connected.\n");
 
@@ -701,6 +704,9 @@ async function main() {
     ok("run_disc returns output", !!rdParsed.output);
     const rdImg = imageContent(runDiscResult);
     ok("run_disc returns screenshot", !!rdImg);
+
+    const stdoutLabel = transportErrors.length ? `first: ${transportErrors[0]}` : "none";
+    ok(`stdout carries only JSON-RPC (${stdoutLabel})`, transportErrors.length === 0);
 
     // --- Results ---
     console.log(`\n${"─".repeat(40)}`);
