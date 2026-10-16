@@ -33,6 +33,9 @@ import { DefaultStationId, FileServerStationId } from "jsbeeb/src/econet.js";
 import { writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+// stdout is the JSON-RPC channel, and jsbeeb logs with console.log.
+console.log = console.info = console.error;
+
 /**
  * How key_down and key_up name a key: by the machine's own name for it, the
  * one keyboard_state reports; or by BBC internal key number, INKEY number, or
