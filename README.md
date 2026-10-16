@@ -147,7 +147,7 @@ For multi-step interaction (debugging, iterative development):
 
 | Tool               | Description                                                    |
 | ------------------ | -------------------------------------------------------------- |
-| `create_machine`   | Boot any machine jsbeeb has (BBC B, Master 128, Acorn Atom), returns a `session_id`; optional `tube` attaches a 65C02 second processor |
+| `create_machine`   | Boot any machine jsbeeb has (BBC B, Master 128, Acorn Atom), returns a `session_id`; optional `tube` attaches a 65C02 second processor, and `econet` a network with a file server (`station_id` sets the station number) |
 | `destroy_machine`  | Free a session                                                 |
 | `load_basic`       | Tokenise + load BBC BASIC source into PAGE                     |
 | `type_input`       | Type text at the current keyboard prompt, then one RETURN unless the text ends in a newline |
@@ -251,6 +251,7 @@ full list for the model.
 - ✅ CPU register inspection
 - ✅ BBC B (8271 and 1770, and a stock B with no sideways RAM) and Master 128 models, booting DFS, ADFS or ANFS, and the Acorn Atom
 - ✅ Multiple concurrent sessions
+- ✅ Econet, with a file server to log on to (`*I AM SYST`), on the BBC B and Master
 - ✅ Whole-machine state snapshots (checkpoint once, restore between attempts)
 - ✅ Disc image loading and autoboot: `.ssd`/`.dsd`/`.adf` files and zips, discs from the
   Stairway to Hell and BBC disc archives, the Bitshifters' demos, `github:` repos and any

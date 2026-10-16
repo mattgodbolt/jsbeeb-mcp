@@ -331,9 +331,23 @@ server.tool(
                 "Attach the second processor this model was sold with: a 3MHz 65C02 for a BBC B, " +
                     "or the 4MHz 65C102 Turbo board for a Master",
             ),
+        econet: z
+            .boolean()
+            .default(false)
+            .describe(
+                "Fit Econet, with a file server on the network (log on with *I AM SYST), " +
+                    "and on a Master the ANFS ROM",
+            ),
+        station_id: z
+            .number()
+            .int()
+            .min(1)
+            .max(253)
+            .optional()
+            .describe("This machine's Econet station number, with econet (default 101)"),
     },
-    async ({ model, boot_timeout_secs, tube }) => {
-        const session = new MachineSession(model, { tube });
+    async ({ model, boot_timeout_secs, tube, econet, station_id }) => {
+        const session = new MachineSession(model, { tube, econet, stationId: station_id });
         await session.initialise();
         const bootOutput = await session.boot(boot_timeout_secs);
         const id = newSessionId();

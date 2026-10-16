@@ -626,6 +626,26 @@ async function main() {
     ok("one in DFS's bank stops at DFS's service entry", broken.breakpoint?.bank === dfsBank && broken.registers?.pc === serviceEntry);
     await callTool(client, "destroy_machine", { session_id: bankSid });
 
+    // --- Econet ---
+    console.log("\n--- econet ---");
+    const econetSid = JSON.parse(
+        textContent(await callTool(client, "create_machine", { econet: true, station_id: 42 })),
+    ).session_id;
+    await callTool(client, "type_input", { session_id: econetSid, text: "PRINT ?&FE18" });
+    const station = JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id: econetSid })));
+    ok("the station number reads back from the Econet links", /^\s+42$/m.test(station.screenText));
+    await callTool(client, "destroy_machine", { session_id: econetSid });
+    const stationAlone = await client.callTool({ name: "create_machine", arguments: { station_id: 42 } });
+    ok("a station number without Econet is refused", stationAlone.isError === true);
+
+    const masterNetSid = JSON.parse(
+        textContent(await callTool(client, "create_machine", { model: "Master", econet: true })),
+    ).session_id;
+    for (const line of ["*NET", "*I AM SYST", "*CAT"]) await callTool(client, "type_input", { session_id: masterNetSid, text: line });
+    const catalogue = JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id: masterNetSid })));
+    ok("a Master logs on to the file server and catalogues it", /Dir\. \$ .*Lib\. LIBRARY/.test(catalogue.screenText));
+    await callTool(client, "destroy_machine", { session_id: masterNetSid });
+
     // --- Atom ---
     console.log("\n--- Atom ---");
     const atomResult = await callTool(client, "create_machine", { model: "Atom" });
