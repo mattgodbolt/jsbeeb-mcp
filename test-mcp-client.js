@@ -522,7 +522,7 @@ async function main() {
     ok("list_states finds the state", listed.states.some((s) => s.state_id === state_id));
     ok("list_states keeps the label", listed.states[0].label === "A% is 42");
 
-    // A state can seed a second machine, so long as it is the same model.
+    // A state can seed a second machine, so long as it is the same model, fitted the same way.
     const createResult5 = await callTool(client, "create_machine", { model: "B-DFS1.2" });
     const { session_id: sid5 } = JSON.parse(textContent(createResult5));
     await callTool(client, "restore_state", { session_id: sid5, state_id });
@@ -625,6 +625,46 @@ async function main() {
     const broken = JSON.parse(textContent(await callTool(client, "type_input", { session_id: bankSid, text: "*HELP" })));
     ok("one in DFS's bank stops at DFS's service entry", broken.breakpoint?.bank === dfsBank && broken.registers?.pc === serviceEntry);
     await callTool(client, "destroy_machine", { session_id: bankSid });
+
+    // --- Econet ---
+    console.log("\n--- econet ---");
+    const econetSid = JSON.parse(
+        textContent(await callTool(client, "create_machine", { econet: true, station_id: 42 })),
+    ).session_id;
+    await callTool(client, "type_input", { session_id: econetSid, text: "PRINT ?&FE18" });
+    const station = JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id: econetSid })));
+    ok("the station number reads back from the Econet links", /^\s+42$/m.test(station.screenText));
+    await callTool(client, "destroy_machine", { session_id: econetSid });
+    const stationAlone = await client.callTool({ name: "create_machine", arguments: { station_id: 42 } });
+    ok("a station number without Econet is refused", stationAlone.isError === true);
+
+    const masterNetSid = JSON.parse(
+        textContent(await callTool(client, "create_machine", { model: "Master", econet: true })),
+    ).session_id;
+    for (const line of ["*NET", "*I AM SYST", "*CAT"]) await callTool(client, "type_input", { session_id: masterNetSid, text: line });
+    const catalogue = JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id: masterNetSid })));
+    ok("a Master logs on to the file server and catalogues it", /Dir\. \$ .*Lib\. LIBRARY/.test(catalogue.screenText));
+    const { state_id: netState } = JSON.parse(textContent(await callTool(client, "save_state", { session_id: masterNetSid })));
+    const listedNet = JSON.parse(textContent(await callTool(client, "list_states", {}))).states.find((s) => s.state_id === netState);
+    ok("list_states says how the machine was fitted", listedNet?.fitted?.econet === true && listedNet.fitted.station_id === 101);
+    const plainMasterSid = JSON.parse(textContent(await callTool(client, "create_machine", { model: "Master" }))).session_id;
+    const intoPlain = await client.callTool({ name: "restore_state", arguments: { session_id: plainMasterSid, state_id: netState } });
+    ok("an Econet state will not restore into a machine without Econet", intoPlain.isError === true && textContent(intoPlain).includes("econet true there, false here"));
+    const otherNetSid = JSON.parse(textContent(await callTool(client, "create_machine", { model: "Master", econet: true }))).session_id;
+    await callTool(client, "restore_state", { session_id: otherNetSid, state_id: netState });
+    for (const line of ["*I AM SYST", "*CAT"]) await callTool(client, "type_input", { session_id: otherNetSid, text: line });
+    const relogged = JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id: otherNetSid })));
+    ok("and another Master with Econet logs on again after restoring it", /Dir\. \$ .*Lib\. LIBRARY/.test(relogged.screenText));
+    const tubeSid = JSON.parse(textContent(await callTool(client, "create_machine", { model: "Master", tube: true }))).session_id;
+    const { state_id: tubeState } = JSON.parse(textContent(await callTool(client, "save_state", { session_id: tubeSid })));
+    const intoNoTube = await client.callTool({ name: "restore_state", arguments: { session_id: plainMasterSid, state_id: tubeState } });
+    ok("a tube state will not restore into a machine without one", intoNoTube.isError === true && textContent(intoNoTube).includes("tube true there, false here"));
+    await callTool(client, "delete_state", { state_id: tubeState });
+    await callTool(client, "destroy_machine", { session_id: tubeSid });
+    await callTool(client, "delete_state", { state_id: netState });
+    for (const id of [masterNetSid, plainMasterSid, otherNetSid]) await callTool(client, "destroy_machine", { session_id: id });
+    const atomNet = await client.callTool({ name: "create_machine", arguments: { model: "Atom", econet: true } });
+    ok("the Atom refuses Econet", atomNet.isError === true);
 
     // --- Atom ---
     console.log("\n--- Atom ---");
