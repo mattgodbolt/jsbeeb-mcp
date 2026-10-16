@@ -29,6 +29,7 @@ import { z } from "zod";
 import { MachineSession, allModels, findModel } from "jsbeeb";
 import { BBC } from "jsbeeb/src/keymap.js";
 import { ATOM } from "jsbeeb/src/keymap-atom.js";
+import { DefaultStationId, FileServerStationId } from "jsbeeb/src/econet.js";
 import { writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -240,6 +241,9 @@ async function autobootMachine(session, hard = true) {
 
 const sessions = new Map(); // sessionId → MachineSession
 
+// What create_machine fitted, which a snapshot does not record but restoring one depends on.
+const fittings = new WeakMap(); // MachineSession → { tube, econet, station_id }
+
 // Snapshots are big (RAM plus every ROM bank), so they stay here and only their
 // IDs cross the wire.  They outlive the session they came from, which is what
 // lets one state seed several machines.
@@ -335,19 +339,22 @@ server.tool(
             .boolean()
             .default(false)
             .describe(
-                "Fit Econet, with a file server on the network (log on with *I AM SYST), " +
-                    "and on a Master the ANFS ROM",
+                "Fit Econet, with a file server on the network. A Master gets the ANFS ROM too: *NET, then " +
+                    "*I AM SYST logs on (MasterANFS boots into it, so *NET is not needed). A BBC B gets the " +
+                    "network hardware but no NFS ROM, so it cannot log on. Not on the Atom",
             ),
         station_id: z
             .number()
             .int()
             .min(1)
-            .max(253)
+            .max(FileServerStationId - 1)
             .optional()
-            .describe("This machine's Econet station number, with econet (default 101)"),
+            .describe(`This machine's Econet station number, with econet (default ${DefaultStationId})`),
     },
     async ({ model, boot_timeout_secs, tube, econet, station_id }) => {
+        if (econet && findModel(model).isAtom) throw new Error("The Atom has no Econet");
         const session = new MachineSession(model, { tube, econet, stationId: station_id });
+        fittings.set(session, { tube, econet, station_id: econet ? (station_id ?? DefaultStationId) : undefined });
         await session.initialise();
         const bootOutput = await session.boot(boot_timeout_secs);
         const id = newSessionId();
@@ -1124,7 +1131,8 @@ server.tool(
 server.tool(
     "save_state",
     "Snapshot the whole machine (CPU, RAM, sideways RAM, video, sound chip, " +
-        "discs, tube) and keep it server-side under a state ID. Booting is the " +
+        "discs, tube) and keep it server-side under a state ID. Econet's file server is not in it, " +
+        "so a machine logged on to it must log on again after a restore. Booting is the " +
         "slow part of a session, so snapshotting once and restoring between " +
         "attempts is much cheaper than creating a machine for each one. The " +
         "snapshot itself never crosses this connection, only its ID.",
@@ -1150,6 +1158,7 @@ server.tool(
         const state_id = crypto.randomUUID();
         states.set(state_id, {
             model: session.modelName,
+            fitted: fittings.get(session),
             label,
             saved_from: session_id,
             saved_at: new Date().toISOString(),
@@ -1170,7 +1179,7 @@ server.tool(
         "the cycle count rewind; breakpoints and the frame counter carry on. The " +
         "target session need not be the one the state was saved from, so a state " +
         "can be restored into several machines to run from the same start point, " +
-        "but it must be the same model.",
+        "but it must be the same model with the same tube and Econet fitted.",
     {
         session_id: z.string().describe("Session ID to restore into"),
         state_id: z.string().describe("State ID from save_state"),
@@ -1185,6 +1194,13 @@ server.tool(
             throw new Error(
                 `State "${state_id}" was saved from a ${saved.model}, ` +
                     `but session "${session_id}" is a ${session.modelName}.`,
+            );
+        }
+        const fitted = fittings.get(session);
+        if (JSON.stringify(saved.fitted) !== JSON.stringify(fitted)) {
+            throw new Error(
+                `State "${state_id}" was saved from a machine fitted with ${JSON.stringify(saved.fitted)}, ` +
+                    `but session "${session_id}" has ${JSON.stringify(fitted)}.`,
             );
         }
         session.restore(saved.snapshot);

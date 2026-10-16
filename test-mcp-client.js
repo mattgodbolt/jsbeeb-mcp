@@ -644,7 +644,17 @@ async function main() {
     for (const line of ["*NET", "*I AM SYST", "*CAT"]) await callTool(client, "type_input", { session_id: masterNetSid, text: line });
     const catalogue = JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id: masterNetSid })));
     ok("a Master logs on to the file server and catalogues it", /Dir\. \$ .*Lib\. LIBRARY/.test(catalogue.screenText));
-    await callTool(client, "destroy_machine", { session_id: masterNetSid });
+    const { state_id: netState } = JSON.parse(textContent(await callTool(client, "save_state", { session_id: masterNetSid })));
+    const plainMasterSid = JSON.parse(textContent(await callTool(client, "create_machine", { model: "Master" }))).session_id;
+    const intoPlain = await client.callTool({ name: "restore_state", arguments: { session_id: plainMasterSid, state_id: netState } });
+    ok("an Econet state will not restore into a machine without Econet", intoPlain.isError === true);
+    const otherNetSid = JSON.parse(textContent(await callTool(client, "create_machine", { model: "Master", econet: true }))).session_id;
+    await callTool(client, "restore_state", { session_id: otherNetSid, state_id: netState });
+    ok("but restores into another Master with Econet", true);
+    await callTool(client, "delete_state", { state_id: netState });
+    for (const id of [masterNetSid, plainMasterSid, otherNetSid]) await callTool(client, "destroy_machine", { session_id: id });
+    const atomNet = await client.callTool({ name: "create_machine", arguments: { model: "Atom", econet: true } });
+    ok("the Atom refuses Econet", atomNet.isError === true);
 
     // --- Atom ---
     console.log("\n--- Atom ---");
