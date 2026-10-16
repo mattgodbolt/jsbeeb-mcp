@@ -241,7 +241,7 @@ async function autobootMachine(session, hard = true) {
 
 const sessions = new Map(); // sessionId → MachineSession
 
-// What create_machine fitted: MachineSession.restore takes a snapshot without checking it was saved from the same.
+// What create_machine fitted: MachineSession.restore doesn't check the machine is fitted as the saved one was.
 const fittings = new WeakMap(); // MachineSession → { tube, econet, station_id }
 
 // Snapshots are big (RAM plus every ROM bank), so they stay here and only their
@@ -1132,7 +1132,7 @@ server.tool(
     "save_state",
     "Snapshot the whole machine (CPU, RAM, sideways RAM, video, sound chip, " +
         "discs, tube) and keep it server-side under a state ID. Econet's file server is not in it, " +
-        "so another machine restored from it must log on again. Booting is the " +
+        "so a machine restored from it may need to log on again. Booting is the " +
         "slow part of a session, so snapshotting once and restoring between " +
         "attempts is much cheaper than creating a machine for each one. The " +
         "snapshot itself never crosses this connection, only its ID.",

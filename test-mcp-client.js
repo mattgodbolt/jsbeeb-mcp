@@ -645,6 +645,8 @@ async function main() {
     const catalogue = JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id: masterNetSid })));
     ok("a Master logs on to the file server and catalogues it", /Dir\. \$ .*Lib\. LIBRARY/.test(catalogue.screenText));
     const { state_id: netState } = JSON.parse(textContent(await callTool(client, "save_state", { session_id: masterNetSid })));
+    const listedNet = JSON.parse(textContent(await callTool(client, "list_states", {}))).states.find((s) => s.state_id === netState);
+    ok("list_states says how the machine was fitted", listedNet?.fitted?.econet === true && listedNet.fitted.station_id === 101);
     const plainMasterSid = JSON.parse(textContent(await callTool(client, "create_machine", { model: "Master" }))).session_id;
     const intoPlain = await client.callTool({ name: "restore_state", arguments: { session_id: plainMasterSid, state_id: netState } });
     ok("an Econet state will not restore into a machine without Econet", intoPlain.isError === true && textContent(intoPlain).includes("econet true there, false here"));
