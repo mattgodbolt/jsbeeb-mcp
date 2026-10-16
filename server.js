@@ -241,7 +241,7 @@ async function autobootMachine(session, hard = true) {
 
 const sessions = new Map(); // sessionId → MachineSession
 
-// What create_machine fitted, which a snapshot does not record but restoring one depends on.
+// What create_machine fitted: MachineSession.restore takes a snapshot without checking it was saved from the same.
 const fittings = new WeakMap(); // MachineSession → { tube, econet, station_id }
 
 // Snapshots are big (RAM plus every ROM bank), so they stay here and only their
@@ -1132,7 +1132,7 @@ server.tool(
     "save_state",
     "Snapshot the whole machine (CPU, RAM, sideways RAM, video, sound chip, " +
         "discs, tube) and keep it server-side under a state ID. Econet's file server is not in it, " +
-        "so a machine logged on to it must log on again after a restore. Booting is the " +
+        "so another machine restored from it must log on again. Booting is the " +
         "slow part of a session, so snapshotting once and restoring between " +
         "attempts is much cheaper than creating a machine for each one. The " +
         "snapshot itself never crosses this connection, only its ID.",
@@ -1167,7 +1167,7 @@ server.tool(
         return {
             content: [{
                 type: "text",
-                text: JSON.stringify({ state_id, model: session.modelName, label }),
+                text: JSON.stringify({ state_id, model: session.modelName, fitted: fittings.get(session), label }),
             }],
         };
     },
@@ -1179,7 +1179,7 @@ server.tool(
         "the cycle count rewind; breakpoints and the frame counter carry on. The " +
         "target session need not be the one the state was saved from, so a state " +
         "can be restored into several machines to run from the same start point, " +
-        "but it must be the same model with the same tube and Econet fitted.",
+        "but it must be the same model with the same tube, Econet and station number.",
     {
         session_id: z.string().describe("Session ID to restore into"),
         state_id: z.string().describe("State ID from save_state"),
@@ -1197,10 +1197,13 @@ server.tool(
             );
         }
         const fitted = fittings.get(session);
-        if (JSON.stringify(saved.fitted) !== JSON.stringify(fitted)) {
+        const differences = Object.keys({ ...saved.fitted, ...fitted })
+            .filter((key) => saved.fitted[key] !== fitted[key])
+            .map((key) => `${key} ${saved.fitted[key] ?? "none"} there, ${fitted[key] ?? "none"} here`);
+        if (differences.length) {
             throw new Error(
-                `State "${state_id}" was saved from a machine fitted with ${JSON.stringify(saved.fitted)}, ` +
-                    `but session "${session_id}" has ${JSON.stringify(fitted)}.`,
+                `State "${state_id}" was saved from a machine fitted differently from session ` +
+                    `"${session_id}": ${differences.join("; ")}.`,
             );
         }
         session.restore(saved.snapshot);
@@ -1232,6 +1235,7 @@ server.tool(
             .map(([state_id, saved]) => ({
                 state_id,
                 model: saved.model,
+                fitted: saved.fitted,
                 label: saved.label,
                 saved_from: saved.saved_from,
                 saved_at: saved.saved_at,

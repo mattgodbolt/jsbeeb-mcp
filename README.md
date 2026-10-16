@@ -168,7 +168,7 @@ For multi-step interaction (debugging, iterative development):
 | `reset`            | Reset the machine; with `autoboot: true`, holds SHIFT during reset (SHIFT+BREAK) |
 | `boot_disc`        | Load a disc image (file, archive or URL) and autoboot it (SHIFT+BREAK) |
 | `save_state`       | Snapshot the whole machine server-side, returns a `state_id`   |
-| `restore_state`    | Put a session back to a saved state (same model, tube and Econet only) |
+| `restore_state`    | Put a session back to a saved state (same model, tube, Econet and station only) |
 | `list_states`      | List saved states, newest first                                |
 | `delete_state`     | Discard a saved state and free its memory                      |
 
@@ -196,14 +196,15 @@ Memory, registers and the cycle count rewind on restore; breakpoints and the
 frame counter deliberately carry on. So does the tape: a state saved before a
 `CHAIN""` restores with the tape already past the program, so `load_tape` it
 again to read it a second time. Econet's file server isn't in the snapshot
-either, so a Master logged on to it logs on again after a restore.
+either, so another Master restored from a logged-on state logs on again.
 
 Snapshots stay on the server and only their IDs cross the connection, so they
 are cheap to pass around but must be freed with `delete_state` when finished —
 they outlive the session they came from. The server holds at most 100 of them
 (roughly 0.4MB each) and refuses a further `save_state` rather than evicting one
 you may be about to restore. That is also what lets one state seed
-several machines: `restore_state` accepts any session of the same model, fitted the same way, so a
+several machines: `restore_state` accepts any session of the same model, fitted the same way (tube, Econet
+and station number), so a
 single starting point can be run forward in parallel.
 
 ### Composable keyboard control
