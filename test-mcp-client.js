@@ -673,9 +673,30 @@ async function main() {
         beaten.reached === false && beaten.stopped_reason === "breakpoint" && beaten.breakpoint?.id === loopBreakpoint.breakpoint_id,
     );
     ok("with the PC at the breakpoint", beaten.registers.pc === loopStart);
+    await client.callTool({ name: "run_until_prompt", arguments: { session_id: loopSid, timeout_secs: timeoutSecs } });
+    const pending = await runUntil({ address: afterInc });
+    ok(
+        "a hit run_until_prompt left unreported comes first",
+        pending.stopped_reason === "pending_breakpoint" && pending.breakpoint?.id === loopBreakpoint.breakpoint_id,
+    );
+    ok(
+        "shaped like its other results",
+        pending.reached === false && pending.completed === undefined && pending.address === afterInc &&
+            pending.addressHex === "0x2002" && pending.cycles_run === 0 && pending.registers.pc === loopStart,
+    );
     await callTool(client, "clear_breakpoint", { session_id: loopSid, id: 0 });
 
-    // A state saved at a run-until stop runs on past it; one saved elsewhere stops at a breakpoint on its PC.
+    const onTarget = JSON.parse(
+        textContent(await callTool(client, "set_breakpoint", { session_id: loopSid, address: afterInc })),
+    );
+    const reachedThroughBreakpoint = await runUntil({ address: afterInc });
+    ok(
+        "a breakpoint on the address itself still reports it reached",
+        reachedThroughBreakpoint.reached === true && reachedThroughBreakpoint.stopped_reason === "address" &&
+            reachedThroughBreakpoint.breakpoint?.id === onTarget.breakpoint_id,
+    );
+    await callTool(client, "clear_breakpoint", { session_id: loopSid, id: 0 });
+
     await runUntil({ address: afterInc });
     const atStop = JSON.parse(textContent(await callTool(client, "save_state", { session_id: loopSid }))).state_id;
     await runUntil({ address: loopJmp });

@@ -183,8 +183,11 @@ reaches `address`, stopping before that instruction runs, or gives up after
 that sideways bank is paged in, as `set_breakpoint` does. The response says
 whether it got there (`reached`) and why it stopped: `address`, `timeout`, or
 `breakpoint` when a breakpoint set with `set_breakpoint` fired first, with the
-registers, `cycles_run` and the text output. The next run starts with the
-instruction it stopped at.
+registers, `cycles_run` and the text output. An execute breakpoint on `address`
+itself does not change that: the response is `reached: true` and `address`,
+with the `breakpoint` attached. A hit an earlier call left unreported comes back
+first as `pending_breakpoint`, with `cycles_run` 0 and nothing run. The next
+run starts with the instruction it stopped at.
 
 ### Code coverage
 

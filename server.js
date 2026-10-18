@@ -283,7 +283,6 @@ function pendingBreakpointResult(session, clear, counters) {
     if (!hit) return null;
     return {
         ...counters,
-        completed: false,
         stopped_reason: "pending_breakpoint",
         output: session.drainOutput({ clear }),
         breakpoint: hit,
@@ -766,7 +765,7 @@ server.tool(
     },
     async ({ session_id, cycles, clear }) => {
         const session = requireSession(session_id);
-        const pending = pendingBreakpointResult(session, clear, { cycles_run: 0 });
+        const pending = pendingBreakpointResult(session, clear, { cycles_run: 0, completed: false });
         if (pending) return { content: [{ type: "text", text: JSON.stringify(pending) }] };
 
         const startCycles = session.elapsedCycles;
@@ -809,6 +808,7 @@ server.tool(
             frames_run: 0,
             cycles_run: 0,
             frame_count: session.frameCount,
+            completed: false,
         });
         if (pending) return { content: [{ type: "text", text: JSON.stringify(pending) }] };
 
@@ -834,9 +834,11 @@ server.tool(
     "Run until the PC reaches an address, stopping before the instruction there runs, or until " +
         "timeout_secs of emulated time pass. Like a one-off execute breakpoint: give bank to stop only while " +
         "that sideways bank is paged in. reached says whether it got there; stopped_reason is 'address', " +
-        "'timeout', or 'breakpoint' if a set breakpoint fired first ('pending_breakpoint' for a hit an earlier " +
-        "call left unreported, as run_for_cycles does). Reports cycles_run, the registers where it stopped, and " +
-        "the text output. The next run starts with the instruction it stopped at.",
+        "'timeout', or 'breakpoint' if a set breakpoint fired first ('pending_breakpoint', with cycles_run 0, for " +
+        "a hit an earlier call left unreported, as run_for_cycles does). An execute breakpoint on the address " +
+        "itself still reports reached true and 'address', with that breakpoint attached. Every result reports " +
+        "address, bank, cycles_run, the registers where it stopped, and the text output. The next run starts " +
+        "with the instruction it stopped at.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
         address: z.number().int().min(0).max(0xffff).describe("Address to run to (0–65535)"),
@@ -855,7 +857,13 @@ server.tool(
     },
     async ({ session_id, address, bank, timeout_secs, clear }) => {
         const session = requireSession(session_id);
-        const pending = pendingBreakpointResult(session, clear, { reached: false, cycles_run: 0 });
+        const pending = pendingBreakpointResult(session, clear, {
+            reached: false,
+            address,
+            addressHex: hexAddress(address),
+            bank,
+            cycles_run: 0,
+        });
         if (pending) return { content: [{ type: "text", text: JSON.stringify(pending) }] };
 
         const startCycles = session.elapsedCycles;
