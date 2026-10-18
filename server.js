@@ -283,7 +283,6 @@ function pendingBreakpointResult(session, clear, counters) {
     if (!hit) return null;
     return {
         ...counters,
-        completed: false,
         stopped_reason: "pending_breakpoint",
         output: session.drainOutput({ clear }),
         breakpoint: hit,
@@ -308,6 +307,7 @@ function hexAddress(address) {
     return `0x${address.toString(16).padStart(4, "0")}`;
 }
 
+const AddressSpaceSize = 0x10000;
 const SidewaysStart = 0x8000;
 const SidewaysSize = 0x4000;
 const AndyEnd = 0x9000;
@@ -327,7 +327,7 @@ class Coverage {
         const cpu = session._machine.processor;
         const hasBanks = !findModel(session.modelName).isAtom;
         const isMaster = cpu.model.isMaster;
-        const counts = new Float64Array(0x10000 + (SidewaysBanks + 1) * SidewaysSize);
+        const counts = new Float64Array(AddressSpaceSize + (SidewaysBanks + 1) * SidewaysSize);
         this.counts = counts;
         this.stop = session.onExecute((pc) => {
             const offset = pc - SidewaysStart;
@@ -337,16 +337,16 @@ class Coverage {
             }
             const romsel = cpu.romsel;
             const slot = isMaster && romsel & RomselAndy && pc < AndyEnd ? AndySlot : romsel & RomselBankMask;
-            counts[0x10000 + slot * SidewaysSize + offset]++;
+            counts[AddressSpaceSize + slot * SidewaysSize + offset]++;
         });
     }
 
     /** Each stretch of executed code and the busiest addresses, at most `maxRanges` and `maxHotSpots` of them. */
     summary({ maxRanges, maxHotSpots }) {
-        const regions = [{ base: 0, start: 0, length: 0x10000 }];
+        const regions = [{ base: 0, start: 0, length: AddressSpaceSize }];
         for (let slot = 0; slot <= AndySlot; slot++) {
             regions.push({
-                base: 0x10000 + slot * SidewaysSize,
+                base: AddressSpaceSize + slot * SidewaysSize,
                 start: SidewaysStart,
                 length: slot === AndySlot ? AndyEnd - SidewaysStart : SidewaysSize,
                 bank: slot === AndySlot ? "andy" : slot,
@@ -766,7 +766,7 @@ server.tool(
     },
     async ({ session_id, cycles, clear }) => {
         const session = requireSession(session_id);
-        const pending = pendingBreakpointResult(session, clear, { cycles_run: 0 });
+        const pending = pendingBreakpointResult(session, clear, { cycles_run: 0, completed: false });
         if (pending) return { content: [{ type: "text", text: JSON.stringify(pending) }] };
 
         const startCycles = session.elapsedCycles;
@@ -809,6 +809,7 @@ server.tool(
             frames_run: 0,
             cycles_run: 0,
             frame_count: session.frameCount,
+            completed: false,
         });
         if (pending) return { content: [{ type: "text", text: JSON.stringify(pending) }] };
 
@@ -834,8 +835,10 @@ server.tool(
     "Run until the PC reaches an address, stopping before the instruction there runs, or until " +
         "timeout_secs of emulated time pass. Like a one-off execute breakpoint: give bank to stop only while " +
         "that sideways bank is paged in. reached says whether it got there; stopped_reason is 'address', " +
-        "'timeout', or 'breakpoint' if a set breakpoint fired first ('pending_breakpoint' for a hit an earlier " +
-        "call left unreported, as run_for_cycles does). Reports cycles_run, the registers where it stopped, and " +
+        "'timeout', or 'breakpoint' if a set breakpoint fired first ('pending_breakpoint', with cycles_run 0 and " +
+        "reached false as nothing ran, for a hit an earlier call left unreported, as run_for_cycles does). An " +
+        "execute breakpoint on the address itself still reports reached true and 'address', with that breakpoint " +
+        "attached. Every result reports address, bank if given, cycles_run, the registers where it stopped, and " +
         "the text output. The next run starts with the instruction it stopped at.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
@@ -855,7 +858,13 @@ server.tool(
     },
     async ({ session_id, address, bank, timeout_secs, clear }) => {
         const session = requireSession(session_id);
-        const pending = pendingBreakpointResult(session, clear, { reached: false, cycles_run: 0 });
+        const pending = pendingBreakpointResult(session, clear, {
+            reached: false,
+            address,
+            addressHex: hexAddress(address),
+            bank,
+            cycles_run: 0,
+        });
         if (pending) return { content: [{ type: "text", text: JSON.stringify(pending) }] };
 
         const startCycles = session.elapsedCycles;
@@ -1262,7 +1271,7 @@ server.tool(
                     breakpoint_id: id,
                     type,
                     address,
-                    addressHex: `0x${address.toString(16).padStart(4, "0")}`,
+                    addressHex: hexAddress(address),
                     bank,
                 }),
             }],
@@ -1296,8 +1305,10 @@ server.tool(
     "start_coverage",
     "Start recording which instructions the host CPU executes, and how often, as the machine runs under " +
         "any tool. Addresses in &8000–&BFFF are kept apart by the sideways bank paged in (and on a Master, " +
-        "ANDY over &8000–&8FFF). Recording never stops the machine. Use stop_coverage to stop and get the " +
-        "summary. Starting again discards what was recorded so far.",
+        "ANDY over &8000–&8FFF); HAZEL and shadow RAM count as the plain address. Recording never stops the " +
+        "machine, and carries on across reset, boot_disc and restore_state. An instruction the machine is " +
+        "stopped at has already been counted, even if stop_coverage comes before it runs. Use stop_coverage to " +
+        "stop and get the summary. Starting again discards what was recorded so far.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
     },
@@ -1313,8 +1324,9 @@ server.tool(
     "stop_coverage",
     "Stop recording coverage and summarise it: instructions_executed, unique_addresses, the stretches of " +
         "code executed (ranges, each from the first to the last instruction address run in it, with bank " +
-        "(0–15, or 'andy') for &8000–&BFFF, the count of addresses and executions in it), and hot_spots, the addresses run " +
-        "most often. Over max_ranges stretches, the busiest are kept; ranges_total says how many there were.",
+        "(0–15, or 'andy') for &8000–&BFFF, the count of addresses and executions in it), and hot_spots, " +
+        "the addresses run most often. Over max_ranges stretches, the busiest are kept; ranges_total says " +
+        "how many there were.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
         max_ranges: z.number().int().min(0).max(2000).default(100).describe("Most stretches of code to list"),
@@ -1382,8 +1394,9 @@ server.tool(
     "restore_state",
     "Put a session back to a state saved by save_state. Memory, registers and " +
         "the cycle count rewind; breakpoints and the frame counter carry on. A state " +
-        "saved where a breakpoint or run_until_address stopped the machine runs on past " +
-        "that instruction when next run; otherwise a breakpoint at the restored PC fires. The " +
+        "saved where an execute breakpoint or run_until_address stopped the machine runs on " +
+        "past that instruction when next run; otherwise an execute breakpoint at the restored PC fires " +
+        "(read and write breakpoints stop after their instruction has run). The " +
         "target session need not be the one the state was saved from, so a state " +
         "can be restored into several machines to run from the same start point, " +
         "but it must be the same model with the same tube, Econet and station number.",
@@ -1422,7 +1435,7 @@ server.tool(
                     state_id,
                     model: saved.model,
                     label: saved.label,
-                    pcHex: `0x${regs.pc.toString(16).padStart(4, "0")}`,
+                    pcHex: hexAddress(regs.pc),
                     frame_count: session.frameCount,
                 }),
             }],

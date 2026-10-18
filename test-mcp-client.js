@@ -37,6 +37,10 @@ function textContent(result) {
     return result.content.find((c) => c.type === "text")?.text ?? "";
 }
 
+function rangeHolds(range, address) {
+    return parseInt(range.startHex, 16) <= address && address <= parseInt(range.endHex, 16);
+}
+
 function imageContent(result) {
     return result.content.find((c) => c.type === "image");
 }
@@ -673,9 +677,30 @@ async function main() {
         beaten.reached === false && beaten.stopped_reason === "breakpoint" && beaten.breakpoint?.id === loopBreakpoint.breakpoint_id,
     );
     ok("with the PC at the breakpoint", beaten.registers.pc === loopStart);
+    await client.callTool({ name: "run_until_prompt", arguments: { session_id: loopSid, timeout_secs: timeoutSecs } });
+    const pending = await runUntil({ address: afterInc });
+    ok(
+        "a hit run_until_prompt left unreported comes first",
+        pending.stopped_reason === "pending_breakpoint" && pending.breakpoint?.id === loopBreakpoint.breakpoint_id,
+    );
+    ok(
+        "shaped like its other results",
+        pending.reached === false && pending.completed === undefined && pending.address === afterInc &&
+            pending.addressHex === "0x2002" && pending.cycles_run === 0 && pending.registers.pc === loopStart,
+    );
     await callTool(client, "clear_breakpoint", { session_id: loopSid, id: 0 });
 
-    // A state saved at a run-until stop runs on past it; one saved elsewhere stops at a breakpoint on its PC.
+    const onTarget = JSON.parse(
+        textContent(await callTool(client, "set_breakpoint", { session_id: loopSid, address: afterInc })),
+    );
+    const reachedThroughBreakpoint = await runUntil({ address: afterInc });
+    ok(
+        "a breakpoint on the address itself still reports it reached",
+        reachedThroughBreakpoint.reached === true && reachedThroughBreakpoint.stopped_reason === "address" &&
+            reachedThroughBreakpoint.breakpoint?.id === onTarget.breakpoint_id,
+    );
+    await callTool(client, "clear_breakpoint", { session_id: loopSid, id: 0 });
+
     await runUntil({ address: afterInc });
     const atStop = JSON.parse(textContent(await callTool(client, "save_state", { session_id: loopSid }))).state_id;
     await runUntil({ address: loopJmp });
@@ -711,12 +736,23 @@ async function main() {
     // Enough hot spots to list every address run, the loop's among the OS's.
     const everyAddress = 500;
     const coverage = JSON.parse(
-        textContent(await callTool(client, "stop_coverage", { session_id: loopSid, max_hot_spots: everyAddress })),
+        textContent(
+            await callTool(client, "stop_coverage", {
+                session_id: loopSid,
+                max_ranges: 2000,
+                max_hot_spots: everyAddress,
+            }),
+        ),
     );
     console.log("coverage:", JSON.stringify({ ...coverage, ranges: coverage.ranges.slice(0, 5), hot_spots: coverage.hot_spots.slice(0, 5) }));
     const loopRange = coverage.ranges.find((r) => r.startHex === "0x2000");
     ok("the loop is one stretch of code", loopRange?.endHex === "0x200b" && loopRange.addresses === 6 && loopRange.bank === undefined);
     ok("ROM code in DFS's bank is told apart", coverage.ranges.some((r) => r.bank === dfsBank && r.startHex === "0x8003"));
+    ok(
+        "and credited to no other bank",
+        coverage.ranges.every((r) => r.bank === dfsBank || !rangeHolds(r, serviceEntry)),
+    );
+    ok("nothing is credited to a bank nothing runs from", !coverage.ranges.some((r) => r.bank === emptyBank));
     ok("totals add up", coverage.instructions_executed === coverage.ranges.reduce((n, r) => n + r.executions, 0));
     const hotLoop = coverage.hot_spots.filter((h) => h.addressHex === "0x2000" || h.addressHex === "0x200b");
     ok("each of the loop's instructions is counted", hotLoop.length === 2 && Math.abs(hotLoop[0].count - hotLoop[1].count) <= 1);
@@ -724,7 +760,6 @@ async function main() {
     const stoppedTwice = await client.callTool({ name: "stop_coverage", arguments: { session_id: loopSid } });
     ok("stop_coverage stops it", stoppedTwice.isError === true);
 
-    // The instruction a run-until stop resumes at is counted once, not again on resuming.
     await runUntil({ address: loopStart });
     await callTool(client, "start_coverage", { session_id: loopSid });
     await runUntil({ address: loopJmp });
@@ -734,14 +769,68 @@ async function main() {
     ok("the instruction a stop resumes at is recorded", oneLap.hot_spots.some((h) => h.addressHex === "0x2000" && h.count === 1));
 
     await callTool(client, "start_coverage", { session_id: loopSid });
+    await runUntil({ address: afterInc });
+    await runUntil({ address: afterInc });
+    const twoStops = JSON.parse(
+        textContent(await callTool(client, "stop_coverage", { session_id: loopSid, max_hot_spots: everyAddress })),
+    );
+    ok(
+        "an address stopped at twice while recording counts twice",
+        twoStops.hot_spots.some((h) => h.addressHex === "0x2002" && h.count === 2),
+    );
+
+    await callTool(client, "start_coverage", { session_id: loopSid });
     await callTool(client, "run_for_cycles", { session_id: loopSid, cycles: 200000 });
     const capped = JSON.parse(
         textContent(await callTool(client, "stop_coverage", { session_id: loopSid, max_ranges: 1, max_hot_spots: 3 })),
     );
     ok("max_ranges caps the stretches listed", capped.ranges.length === 1 && capped.ranges_total > 1);
     ok("max_hot_spots caps the hot spots", capped.hot_spots.length === 3);
+    const resetVector = JSON.parse(
+        textContent(await callTool(client, "read_memory", { session_id: loopSid, address: 0xfffc, length: 2 })),
+    ).bytes;
+    const resetEntry = resetVector[0] | (resetVector[1] << 8);
+    await callTool(client, "start_coverage", { session_id: loopSid });
+    await runUntil({ address: afterInc });
+    await callTool(client, "reset", { session_id: loopSid });
+    await callTool(client, "run_for_cycles", { session_id: loopSid, cycles: 1000 });
+    const acrossReset = JSON.parse(
+        textContent(await callTool(client, "stop_coverage", { session_id: loopSid, max_ranges: 2000 })),
+    );
+    ok(
+        "coverage carries on across a reset",
+        acrossReset.ranges.some((r) => rangeHolds(r, afterInc)) &&
+            acrossReset.ranges.some((r) => parseInt(r.startHex, 16) === resetEntry),
+    );
+
     await callTool(client, "start_coverage", { session_id: loopSid });
     await callTool(client, "destroy_machine", { session_id: loopSid });
+
+    const andySid = JSON.parse(textContent(await callTool(client, "create_machine", { model: "Master" }))).session_id;
+    const andyLoop = 0x8000;
+    // SEI; ROMSEL |= &80 to page ANDY in; copy INC &70: JMP &8000 there; JMP &8000.
+    const intoAndy = [
+        0x78, 0xa5, 0xf4, 0x09, 0x80, 0x8d, 0x30, 0xfe,
+        ...[0xe6, 0x70, 0x4c, 0x00, 0x80].flatMap((byte, i) => [0xa9, byte, 0x8d, i, 0x80]),
+        0x4c, 0x00, 0x80,
+    ];
+    await callTool(client, "write_memory", { session_id: andySid, address: loopStart, bytes: intoAndy });
+    await callTool(client, "type_input", { session_id: andySid, text: "CALL &2000" });
+    await callTool(client, "run_for_cycles", { session_id: andySid, cycles: 100000 });
+    await callTool(client, "start_coverage", { session_id: andySid });
+    await callTool(client, "run_for_cycles", { session_id: andySid, cycles: 100000 });
+    const andyCoverage = JSON.parse(
+        textContent(await callTool(client, "stop_coverage", { session_id: andySid, max_ranges: 2000 })),
+    );
+    ok(
+        "code run from ANDY is credited to it",
+        andyCoverage.ranges.some((r) => r.bank === "andy" && r.startHex === "0x8000" && r.endHex === "0x8002"),
+    );
+    ok(
+        "and not to a sideways bank",
+        andyCoverage.ranges.every((r) => r.bank === "andy" || !rangeHolds(r, andyLoop)),
+    );
+    await callTool(client, "destroy_machine", { session_id: andySid });
 
     // --- Econet ---
     console.log("\n--- econet ---");

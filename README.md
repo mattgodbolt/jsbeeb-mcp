@@ -183,8 +183,11 @@ reaches `address`, stopping before that instruction runs, or gives up after
 that sideways bank is paged in, as `set_breakpoint` does. The response says
 whether it got there (`reached`) and why it stopped: `address`, `timeout`, or
 `breakpoint` when a breakpoint set with `set_breakpoint` fired first, with the
-registers, `cycles_run` and the text output. The next run starts with the
-instruction it stopped at.
+registers, `cycles_run` and the text output. An execute breakpoint on `address`
+itself does not change that: the response is `reached: true` and `address`,
+with the `breakpoint` attached. A hit an earlier call left unreported comes back
+first as `pending_breakpoint`, with `cycles_run` 0 and nothing run. The next
+run starts with the instruction it stopped at.
 
 ### Code coverage
 
@@ -196,14 +199,18 @@ counting and returns a summary rather than the counts:
 - `instructions_executed` and `unique_addresses`
 - `ranges`: each stretch of code run, from the first to the last instruction
   address in it (addresses no more than 3 bytes apart, the longest 6502
-  instruction, count as one stretch), with its `bank` (0 to 15, or `andy`), how many addresses ran
-  and how many times. Past `max_ranges` (100) only the busiest are listed, and
-  `ranges_total` says how many there were
+  instruction, count as one stretch), with its `bank` (0 to 15, or `andy`),
+  how many addresses ran and how many times. Past `max_ranges` (100) only the
+  busiest are listed, and `ranges_total` says how many there were
 - `hot_spots`: the `max_hot_spots` (20) addresses run most often
 
-Starting again discards the counts so far; `restore_state` does not, so
-counting carries on across attempts. `destroy_machine` stops counting along
-with the machine.
+Starting again discards the counts so far; `restore_state`, `reset` and
+`boot_disc` do not, so counting carries on across attempts. `destroy_machine`
+stops counting along with the machine. On a Master, code run from HAZEL or
+shadow RAM is counted at its plain address. An instruction is counted just
+before it runs, so one the machine is stopped at is already in the counts even
+if `stop_coverage` comes before it runs, and is counted again when a state
+saved at that stop is restored and run on.
 
 ### Paged memory
 
@@ -231,9 +238,11 @@ frame counter deliberately carry on. So does the tape: a state saved before a
 again to read it a second time. Econet's file server isn't in the snapshot
 either, so a Master restored from one may need to log on again.
 
-A state saved where a breakpoint or `run_until_address` stopped the machine
-runs on past that instruction when next run, as the machine it came from would
-have. Any other state stops at a breakpoint on its PC straight away.
+A state saved where an execute breakpoint or `run_until_address` stopped the
+machine runs on past that instruction when next run, as the machine it came from
+would have. Read and write breakpoints stop after their instruction has run, so
+a state saved at one, like any other state, stops at an execute breakpoint on
+its PC straight away.
 
 Snapshots stay on the server and only their IDs cross the connection, so they
 are cheap to pass around but must be freed with `delete_state` when finished —
