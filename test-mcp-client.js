@@ -789,6 +789,7 @@ async function main() {
     const resetVector = JSON.parse(
         textContent(await callTool(client, "read_memory", { session_id: loopSid, address: 0xfffc, length: 2 })),
     ).bytes;
+    const resetEntry = resetVector[0] | (resetVector[1] << 8);
     await callTool(client, "start_coverage", { session_id: loopSid });
     await runUntil({ address: afterInc });
     await callTool(client, "reset", { session_id: loopSid });
@@ -799,7 +800,7 @@ async function main() {
     ok(
         "coverage carries on across a reset",
         acrossReset.ranges.some((r) => rangeHolds(r, afterInc)) &&
-            acrossReset.ranges.some((r) => rangeHolds(r, resetVector[0] | (resetVector[1] << 8))),
+            acrossReset.ranges.some((r) => parseInt(r.startHex, 16) === resetEntry),
     );
 
     await callTool(client, "start_coverage", { session_id: loopSid });
