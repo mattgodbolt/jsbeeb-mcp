@@ -1,5 +1,18 @@
 # Changelog
 
+## [4.2.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v4.1.0...v4.2.0) (2026-10-18)
+
+
+### Features
+
+* fit Econet and choose the station number, and restore a state only into a machine fitted alike ([#49](https://github.com/mattgodbolt/jsbeeb-mcp/issues/49)) ([32afbb9](https://github.com/mattgodbolt/jsbeeb-mcp/commit/32afbb94acab683a69bb58db71a182c54b5a675a))
+* run_until_address and code coverage, on jsbeeb 2.8.0 ([#52](https://github.com/mattgodbolt/jsbeeb-mcp/issues/52)) ([ce9f64e](https://github.com/mattgodbolt/jsbeeb-mcp/commit/ce9f64ebcba2b7d1edb77027128ca6f8a33f66fb))
+
+
+### Bug Fixes
+
+* keep jsbeeb's log lines off the MCP's stdout ([#51](https://github.com/mattgodbolt/jsbeeb-mcp/issues/51)) ([5f0a7bc](https://github.com/mattgodbolt/jsbeeb-mcp/commit/5f0a7bcc95c074e7e64de944ee23fec160e35a4e))
+
 ## [4.1.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v4.0.1...v4.1.0) (2026-10-14)
 
 
