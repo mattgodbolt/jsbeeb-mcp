@@ -835,10 +835,10 @@ server.tool(
     "Run until the PC reaches an address, stopping before the instruction there runs, or until " +
         "timeout_secs of emulated time pass. Like a one-off execute breakpoint: give bank to stop only while " +
         "that sideways bank is paged in. reached says whether it got there; stopped_reason is 'address', " +
-        "'timeout', or 'breakpoint' if a set breakpoint fired first ('pending_breakpoint', with cycles_run 0, for " +
-        "a hit an earlier call left unreported, as run_for_cycles does). An execute breakpoint on the address " +
+        "'timeout', or 'breakpoint' if a set breakpoint fired first ('pending_breakpoint', with cycles_run 0 and " +
+        "reached false as nothing ran, for a hit an earlier call left unreported, as run_for_cycles does). An execute breakpoint on the address " +
         "itself still reports reached true and 'address', with that breakpoint attached. Every result reports " +
-        "address, bank, cycles_run, the registers where it stopped, and the text output. The next run starts " +
+        "address, bank if given, cycles_run, the registers where it stopped, and the text output. The next run starts " +
         "with the instruction it stopped at.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
@@ -1395,7 +1395,8 @@ server.tool(
     "Put a session back to a state saved by save_state. Memory, registers and " +
         "the cycle count rewind; breakpoints and the frame counter carry on. A state " +
         "saved where an execute breakpoint or run_until_address stopped the machine runs on " +
-        "past that instruction when next run; otherwise a breakpoint at the restored PC fires. The " +
+        "past that instruction when next run; otherwise an execute breakpoint at the restored PC fires " +
+        "(read and write breakpoints stop after their instruction has run). The " +
         "target session need not be the one the state was saved from, so a state " +
         "can be restored into several machines to run from the same start point, " +
         "but it must be the same model with the same tube, Econet and station number.",

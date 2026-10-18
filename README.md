@@ -209,7 +209,8 @@ Starting again discards the counts so far; `restore_state`, `reset` and
 stops counting along with the machine. On a Master, code run from HAZEL or
 shadow RAM is counted at its plain address. An instruction is counted just
 before it runs, so one the machine is stopped at is already in the counts even
-if `stop_coverage` comes before it runs.
+if `stop_coverage` comes before it runs, and is counted again when a state
+saved at that stop is restored and run on.
 
 ### Paged memory
 
