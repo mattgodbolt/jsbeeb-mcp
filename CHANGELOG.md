@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.2.1](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v4.2.0...v4.2.1) (2026-10-18)
+
+
+### Bug Fixes
+
+* follow up [#52](https://github.com/mattgodbolt/jsbeeb-mcp/issues/52)'s review: run_until_address's pending result, coverage tests and docs ([#53](https://github.com/mattgodbolt/jsbeeb-mcp/issues/53)) ([82276be](https://github.com/mattgodbolt/jsbeeb-mcp/commit/82276be09d06a6278ebfaea3e09ce60d5ae1b0ef))
+
 ## [4.2.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v4.1.0...v4.2.0) (2026-10-18)
 
 
