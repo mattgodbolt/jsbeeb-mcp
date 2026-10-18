@@ -1305,8 +1305,10 @@ server.tool(
     "start_coverage",
     "Start recording which instructions the host CPU executes, and how often, as the machine runs under " +
         "any tool. Addresses in &8000–&BFFF are kept apart by the sideways bank paged in (and on a Master, " +
-        "ANDY over &8000–&8FFF). Recording never stops the machine. Use stop_coverage to stop and get the " +
-        "summary. Starting again discards what was recorded so far.",
+        "ANDY over &8000–&8FFF); HAZEL and shadow RAM count as the plain address. Recording never stops the " +
+        "machine, and carries on across reset, boot_disc and restore_state. An instruction the machine is " +
+        "stopped at has already been counted, even if stop_coverage comes before it runs. Use stop_coverage to " +
+        "stop and get the summary. Starting again discards what was recorded so far.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
     },
@@ -1322,8 +1324,9 @@ server.tool(
     "stop_coverage",
     "Stop recording coverage and summarise it: instructions_executed, unique_addresses, the stretches of " +
         "code executed (ranges, each from the first to the last instruction address run in it, with bank " +
-        "(0–15, or 'andy') for &8000–&BFFF, the count of addresses and executions in it), and hot_spots, the addresses run " +
-        "most often. Over max_ranges stretches, the busiest are kept; ranges_total says how many there were.",
+        "(0–15, or 'andy') for &8000–&BFFF, the count of addresses and executions in it), and hot_spots, " +
+        "the addresses run most often. Over max_ranges stretches, the busiest are kept; ranges_total says " +
+        "how many there were.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
         max_ranges: z.number().int().min(0).max(2000).default(100).describe("Most stretches of code to list"),
@@ -1391,8 +1394,8 @@ server.tool(
     "restore_state",
     "Put a session back to a state saved by save_state. Memory, registers and " +
         "the cycle count rewind; breakpoints and the frame counter carry on. A state " +
-        "saved where a breakpoint or run_until_address stopped the machine runs on past " +
-        "that instruction when next run; otherwise a breakpoint at the restored PC fires. The " +
+        "saved where an execute breakpoint or run_until_address stopped the machine runs on " +
+        "past that instruction when next run; otherwise a breakpoint at the restored PC fires. The " +
         "target session need not be the one the state was saved from, so a state " +
         "can be restored into several machines to run from the same start point, " +
         "but it must be the same model with the same tube, Econet and station number.",
