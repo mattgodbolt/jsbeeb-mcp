@@ -836,10 +836,10 @@ server.tool(
         "timeout_secs of emulated time pass. Like a one-off execute breakpoint: give bank to stop only while " +
         "that sideways bank is paged in. reached says whether it got there; stopped_reason is 'address', " +
         "'timeout', or 'breakpoint' if a set breakpoint fired first ('pending_breakpoint', with cycles_run 0 and " +
-        "reached false as nothing ran, for a hit an earlier call left unreported, as run_for_cycles does). An execute breakpoint on the address " +
-        "itself still reports reached true and 'address', with that breakpoint attached. Every result reports " +
-        "address, bank if given, cycles_run, the registers where it stopped, and the text output. The next run starts " +
-        "with the instruction it stopped at.",
+        "reached false as nothing ran, for a hit an earlier call left unreported, as run_for_cycles does). An " +
+        "execute breakpoint on the address itself still reports reached true and 'address', with that breakpoint " +
+        "attached. Every result reports address, bank if given, cycles_run, the registers where it stopped, and " +
+        "the text output. The next run starts with the instruction it stopped at.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
         address: z.number().int().min(0).max(0xffff).describe("Address to run to (0–65535)"),
