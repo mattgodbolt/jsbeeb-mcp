@@ -786,6 +786,22 @@ async function main() {
     );
     ok("max_ranges caps the stretches listed", capped.ranges.length === 1 && capped.ranges_total > 1);
     ok("max_hot_spots caps the hot spots", capped.hot_spots.length === 3);
+    const resetVector = JSON.parse(
+        textContent(await callTool(client, "read_memory", { session_id: loopSid, address: 0xfffc, length: 2 })),
+    ).bytes;
+    await callTool(client, "start_coverage", { session_id: loopSid });
+    await runUntil({ address: afterInc });
+    await callTool(client, "reset", { session_id: loopSid });
+    await callTool(client, "run_for_cycles", { session_id: loopSid, cycles: 1000 });
+    const acrossReset = JSON.parse(
+        textContent(await callTool(client, "stop_coverage", { session_id: loopSid, max_ranges: 2000 })),
+    );
+    ok(
+        "coverage carries on across a reset",
+        acrossReset.ranges.some((r) => rangeHolds(r, afterInc)) &&
+            acrossReset.ranges.some((r) => rangeHolds(r, resetVector[0] | (resetVector[1] << 8))),
+    );
+
     await callTool(client, "start_coverage", { session_id: loopSid });
     await callTool(client, "destroy_machine", { session_id: loopSid });
 
