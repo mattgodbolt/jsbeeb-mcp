@@ -30,6 +30,7 @@ import { MachineSession, allModels, findModel } from "jsbeeb";
 import { BBC } from "jsbeeb/src/keymap.js";
 import { ATOM } from "jsbeeb/src/keymap-atom.js";
 import { DefaultStationId, FileServerStationId } from "jsbeeb/src/econet.js";
+import { AssertionError } from "node:assert";
 import { writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -299,6 +300,10 @@ function addBreakpointStop(session, result) {
         breakpoint: hit,
         registers: registersWithCounters(session),
     };
+}
+
+function hexAddress(address) {
+    return `0x${address.toString(16).padStart(4, "0")}`;
 }
 
 function requireSession(sessionId) {
@@ -718,6 +723,64 @@ server.tool(
             completed,
             output,
         });
+        return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: run_until_address
+// ---------------------------------------------------------------------------
+
+server.tool(
+    "run_until_address",
+    "Run until the PC reaches an address, stopping before the instruction there runs, or until " +
+        "timeout_secs of emulated time pass. Like a one-off execute breakpoint: give bank to stop only while " +
+        "that sideways bank is paged in. reached says whether it got there; stopped_reason is 'address', " +
+        "'timeout', or 'breakpoint' if a set breakpoint fired first ('pending_breakpoint' for a hit an earlier " +
+        "call left unreported, as run_for_cycles does). Reports cycles_run, the registers where it stopped, and " +
+        "the text output. The next run starts with the instruction it stopped at.",
+    {
+        session_id: z.string().describe("Session ID from create_machine"),
+        address: z.number().int().min(0).max(0xffff).describe("Address to run to (0–65535)"),
+        bank: z
+            .number()
+            .int()
+            .min(0)
+            .max(15)
+            .optional()
+            .describe("Only stop while this sideways bank is paged in at &8000–&BFFF, to stop in one ROM"),
+        timeout_secs: z.number().positive().default(30).describe("Max emulated seconds to run before giving up"),
+        clear: z
+            .boolean()
+            .default(true)
+            .describe("If true (default), clear the output buffer after returning it. Pass false to peek."),
+    },
+    async ({ session_id, address, bank, timeout_secs, clear }) => {
+        const session = requireSession(session_id);
+        const pending = pendingBreakpointResult(session, clear, { reached: false, cycles_run: 0 });
+        if (pending) return { content: [{ type: "text", text: JSON.stringify(pending) }] };
+
+        const startCycles = session.elapsedCycles;
+        let reached = true;
+        try {
+            await session.runUntilAddress(address, timeout_secs, { bank });
+        } catch (err) {
+            // How runUntilAddress says the run ended without reaching the address.
+            if (!(err instanceof AssertionError)) throw err;
+            reached = false;
+        }
+        const breakpoint = takeBreakpointHit(session);
+        const result = {
+            reached,
+            stopped_reason: reached ? "address" : breakpoint ? "breakpoint" : "timeout",
+            address,
+            addressHex: hexAddress(address),
+            bank,
+            cycles_run: session.elapsedCycles - startCycles,
+            output: session.drainOutput({ clear }),
+            registers: registersWithCounters(session),
+        };
+        if (breakpoint) result.breakpoint = breakpoint;
         return { content: [{ type: "text", text: JSON.stringify(result) }] };
     },
 );
@@ -1179,7 +1242,9 @@ server.tool(
 server.tool(
     "restore_state",
     "Put a session back to a state saved by save_state. Memory, registers and " +
-        "the cycle count rewind; breakpoints and the frame counter carry on. The " +
+        "the cycle count rewind; breakpoints and the frame counter carry on. A state " +
+        "saved where a breakpoint or run_until_address stopped the machine runs on past " +
+        "that instruction when next run; otherwise a breakpoint at the restored PC fires. The " +
         "target session need not be the one the state was saved from, so a state " +
         "can be restored into several machines to run from the same start point, " +
         "but it must be the same model with the same tube, Econet and station number.",

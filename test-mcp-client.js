@@ -133,6 +133,7 @@ async function main() {
     ok("has run_frames", toolNames.includes("run_frames"));
     ok("has load_tape", toolNames.includes("load_tape"));
     ok("has flush_keyboard_buffer", toolNames.includes("flush_keyboard_buffer"));
+    ok("has run_until_address", toolNames.includes("run_until_address"));
 
     // Every model create_machine offers must be one jsbeeb actually knows, or the
     // client is invited to pick a name that fails deep inside MachineSession.
@@ -628,6 +629,74 @@ async function main() {
     const broken = JSON.parse(textContent(await callTool(client, "type_input", { session_id: bankSid, text: "*HELP" })));
     ok("one in DFS's bank stops at DFS's service entry", broken.breakpoint?.bank === dfsBank && broken.registers?.pc === serviceEntry);
     await callTool(client, "destroy_machine", { session_id: bankSid });
+
+    // --- run_until_address ---
+    console.log("\n--- run_until_address ---");
+    const loopSid = JSON.parse(textContent(await callTool(client, "create_machine", {}))).session_id;
+    const loopStart = 0x2000;
+    const afterInc = 0x2002;
+    const loopJmp = 0x200b;
+    // INC &70; OSBYTE 143 with an unclaimed service call, which every ROM's service entry sees; JMP back.
+    const loopCode = [0xe6, 0x70, 0xa9, 0x8f, 0xa2, 0x60, 0xa0, 0x00, 0x20, 0xf4, 0xff, 0x4c, 0x00, 0x20];
+    await callTool(client, "write_memory", { session_id: loopSid, address: loopStart, bytes: loopCode });
+    await callTool(client, "type_input", { session_id: loopSid, text: "CALL &2000" });
+    const runUntil = async (args) =>
+        JSON.parse(textContent(await callTool(client, "run_until_address", { session_id: loopSid, ...args })));
+    const loopPc = async () =>
+        JSON.parse(textContent(await callTool(client, "read_registers", { session_id: loopSid }))).pc;
+
+    const toInc = await runUntil({ address: afterInc });
+    ok("run_until_address reaches the address", toInc.reached === true && toInc.stopped_reason === "address");
+    ok("and stops with the PC there", toInc.registers.pc === afterInc && toInc.addressHex === "0x2002");
+    const again = await runUntil({ address: afterInc });
+    ok("running to the same address again goes round the loop", again.reached === true && again.cycles_run > 0);
+
+    const timeoutSecs = 0.01;
+    const nowhere = await runUntil({ address: 0x3000, timeout_secs: timeoutSecs });
+    ok("an address never reached times out", nowhere.reached === false && nowhere.stopped_reason === "timeout");
+    ok("after the time asked for", Math.abs(nowhere.cycles_run - timeoutSecs * 2_000_000) <= 16);
+
+    const inDfs = await runUntil({ address: serviceEntry, bank: dfsBank });
+    ok("run_until_address stops in a given bank", inDfs.reached === true && inDfs.registers.pc === serviceEntry);
+    ok("and reports the bank", inDfs.bank === dfsBank);
+    const inEmpty = await runUntil({ address: serviceEntry, bank: emptyBank, timeout_secs: timeoutSecs });
+    ok("but not in a bank nothing runs from", inEmpty.reached === false && inEmpty.stopped_reason === "timeout");
+
+    const loopBreakpoint = JSON.parse(
+        textContent(await callTool(client, "set_breakpoint", { session_id: loopSid, address: loopStart })),
+    );
+    const beaten = await runUntil({ address: afterInc });
+    ok(
+        "a breakpoint on the way stops it first",
+        beaten.reached === false && beaten.stopped_reason === "breakpoint" && beaten.breakpoint?.id === loopBreakpoint.breakpoint_id,
+    );
+    ok("with the PC at the breakpoint", beaten.registers.pc === loopStart);
+    await callTool(client, "clear_breakpoint", { session_id: loopSid, id: 0 });
+
+    // A state saved at a run-until stop runs on past it; one saved elsewhere stops at a breakpoint on its PC.
+    await runUntil({ address: afterInc });
+    const atStop = JSON.parse(textContent(await callTool(client, "save_state", { session_id: loopSid }))).state_id;
+    await runUntil({ address: loopJmp });
+    await callTool(client, "restore_state", { session_id: loopSid, state_id: atStop });
+    const fromStop = await runUntil({ address: afterInc });
+    ok("a state saved at a run-until stop runs on past it", fromStop.reached === true && fromStop.cycles_run > 0);
+    await callTool(client, "delete_state", { state_id: atStop });
+
+    await callTool(client, "run_for_cycles", { session_id: loopSid, cycles: 1000 });
+    const midPc = await loopPc();
+    const notAtStop = JSON.parse(textContent(await callTool(client, "save_state", { session_id: loopSid }))).state_id;
+    await callTool(client, "run_for_cycles", { session_id: loopSid, cycles: 1000 });
+    await callTool(client, "set_breakpoint", { session_id: loopSid, address: midPc });
+    await callTool(client, "restore_state", { session_id: loopSid, state_id: notAtStop });
+    const atRestoredPc = JSON.parse(textContent(await callTool(client, "run_for_cycles", { session_id: loopSid, cycles: 1000 })));
+    ok(
+        "a breakpoint at the PC of a state saved elsewhere fires at once",
+        atRestoredPc.stopped_reason === "breakpoint" && atRestoredPc.cycles_run === 0,
+    );
+    await callTool(client, "clear_breakpoint", { session_id: loopSid, id: 0 });
+    await callTool(client, "delete_state", { state_id: notAtStop });
+
+    await callTool(client, "destroy_machine", { session_id: loopSid });
 
     // --- Econet ---
     console.log("\n--- econet ---");
