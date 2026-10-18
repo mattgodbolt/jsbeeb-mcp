@@ -307,6 +307,7 @@ function hexAddress(address) {
     return `0x${address.toString(16).padStart(4, "0")}`;
 }
 
+const AddressSpaceSize = 0x10000;
 const SidewaysStart = 0x8000;
 const SidewaysSize = 0x4000;
 const AndyEnd = 0x9000;
@@ -326,7 +327,7 @@ class Coverage {
         const cpu = session._machine.processor;
         const hasBanks = !findModel(session.modelName).isAtom;
         const isMaster = cpu.model.isMaster;
-        const counts = new Float64Array(0x10000 + (SidewaysBanks + 1) * SidewaysSize);
+        const counts = new Float64Array(AddressSpaceSize + (SidewaysBanks + 1) * SidewaysSize);
         this.counts = counts;
         this.stop = session.onExecute((pc) => {
             const offset = pc - SidewaysStart;
@@ -336,16 +337,16 @@ class Coverage {
             }
             const romsel = cpu.romsel;
             const slot = isMaster && romsel & RomselAndy && pc < AndyEnd ? AndySlot : romsel & RomselBankMask;
-            counts[0x10000 + slot * SidewaysSize + offset]++;
+            counts[AddressSpaceSize + slot * SidewaysSize + offset]++;
         });
     }
 
     /** Each stretch of executed code and the busiest addresses, at most `maxRanges` and `maxHotSpots` of them. */
     summary({ maxRanges, maxHotSpots }) {
-        const regions = [{ base: 0, start: 0, length: 0x10000 }];
+        const regions = [{ base: 0, start: 0, length: AddressSpaceSize }];
         for (let slot = 0; slot <= AndySlot; slot++) {
             regions.push({
-                base: 0x10000 + slot * SidewaysSize,
+                base: AddressSpaceSize + slot * SidewaysSize,
                 start: SidewaysStart,
                 length: slot === AndySlot ? AndyEnd - SidewaysStart : SidewaysSize,
                 bank: slot === AndySlot ? "andy" : slot,
@@ -1270,7 +1271,7 @@ server.tool(
                     breakpoint_id: id,
                     type,
                     address,
-                    addressHex: `0x${address.toString(16).padStart(4, "0")}`,
+                    addressHex: hexAddress(address),
                     bank,
                 }),
             }],
@@ -1430,7 +1431,7 @@ server.tool(
                     state_id,
                     model: saved.model,
                     label: saved.label,
-                    pcHex: `0x${regs.pc.toString(16).padStart(4, "0")}`,
+                    pcHex: hexAddress(regs.pc),
                     frame_count: session.frameCount,
                 }),
             }],
