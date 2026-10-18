@@ -158,6 +158,9 @@ For multi-step interaction (debugging, iterative development):
 | `read_registers`   | Get 6502 CPU registers (PC, A, X, Y, S, P), the frame counter and elapsed cycles |
 | `run_for_cycles`   | Run N CPU cycles, or up to a breakpoint; reports `cycles_run`, the count actually run (drains output by default — use `clear: false` to peek without consuming) |
 | `run_frames`       | Advance N painted frames — use this, not `run_for_cycles`, to step the display |
+| `run_until_address` | Run until the PC reaches an address (in one sideways `bank` if given), or `timeout_secs` pass; reports `reached`, `stopped_reason` and the registers |
+| `start_coverage`   | Start counting every instruction address the host CPU executes |
+| `stop_coverage`    | Stop counting and summarise: stretches of code run, by bank, and the hottest addresses |
 | `load_disc`        | Put a disc in drive 0 or 1, from a file, an archive or a URL   |
 | `load_tape`        | Put a `.uef` tape (or a zip holding one) in the cassette recorder and press PLAY, from a file or a URL |
 | `key_down`         | Press and hold a key, by the machine's name for it (`SHIFT`, `A`, `RETURN`, `F0`, `COLON_STAR`) or by BBC internal key number, INKEY number, or matrix col/row |
@@ -171,6 +174,36 @@ For multi-step interaction (debugging, iterative development):
 | `restore_state`    | Put a session back to a saved state (same model, tube, Econet and station only) |
 | `list_states`      | List saved states, newest first                                |
 | `delete_state`     | Discard a saved state and free its memory                      |
+
+### Running to an address
+
+`run_until_address` is a one-off execute breakpoint: it runs until the PC
+reaches `address`, stopping before that instruction runs, or gives up after
+`timeout_secs` of emulated time (30 by default). `bank` makes it stop only while
+that sideways bank is paged in, as `set_breakpoint` does. The response says
+whether it got there (`reached`) and why it stopped: `address`, `timeout`, or
+`breakpoint` when a breakpoint set with `set_breakpoint` fired first, with the
+registers, `cycles_run` and the text output. The next run starts with the
+instruction it stopped at.
+
+### Code coverage
+
+`start_coverage` counts every instruction the host CPU executes, at whatever
+address and, in `&8000`–`&BFFF`, in whichever sideways bank (or on a Master,
+ANDY) was paged in, while any tool runs the machine. `stop_coverage` stops
+counting and returns a summary rather than the counts:
+
+- `instructions_executed` and `unique_addresses`
+- `ranges`: each stretch of code run, from the first to the last instruction
+  address in it (addresses no more than 3 bytes apart, the longest 6502
+  instruction, count as one stretch), with its `bank` (0 to 15, or `andy`), how many addresses ran
+  and how many times. Past `max_ranges` (100) only the busiest are listed, and
+  `ranges_total` says how many there were
+- `hot_spots`: the `max_hot_spots` (20) addresses run most often
+
+Starting again discards the counts so far; `restore_state` does not, so
+counting carries on across attempts. `destroy_machine` stops counting along
+with the machine.
 
 ### Paged memory
 
@@ -197,6 +230,10 @@ frame counter deliberately carry on. So does the tape: a state saved before a
 `CHAIN""` restores with the tape already past the program, so `load_tape` it
 again to read it a second time. Econet's file server isn't in the snapshot
 either, so a Master restored from one may need to log on again.
+
+A state saved where a breakpoint or `run_until_address` stopped the machine
+runs on past that instruction when next run, as the machine it came from would
+have. Any other state stops at a breakpoint on its PC straight away.
 
 Snapshots stay on the server and only their IDs cross the connection, so they
 are cheap to pass around but must be freed with `delete_state` when finished —
@@ -262,6 +299,7 @@ full list for the model.
 - ✅ Tapes: `.uef` files and zips, from a file or a URL
 - ✅ Low-level keyboard control (key_down/key_up)
 - ✅ Breakpoints on execute, read or write, optionally only while a given sideways bank is paged in
+- ✅ Running to an address, and code coverage by address and sideways bank
 
 ## Known limitations
 

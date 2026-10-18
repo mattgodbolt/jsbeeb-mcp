@@ -30,6 +30,7 @@ import { MachineSession, allModels, findModel } from "jsbeeb";
 import { BBC } from "jsbeeb/src/keymap.js";
 import { ATOM } from "jsbeeb/src/keymap-atom.js";
 import { DefaultStationId, FileServerStationId } from "jsbeeb/src/econet.js";
+import { AssertionError } from "node:assert";
 import { writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -252,6 +253,8 @@ const fittings = new WeakMap(); // MachineSession → { tube, econet, station_id
 // lets one state seed several machines.
 const states = new Map(); // stateId → { model, label, saved_from, saved_at, snapshot }
 
+const coverages = new WeakMap(); // MachineSession → Coverage, while start_coverage is recording
+
 // A snapshot is about 0.4MB, so this caps the store around 40MB: far more than
 // any real checkpointing needs, and enough to stop a runaway caller filling the
 // heap and taking every live session down with it.
@@ -299,6 +302,105 @@ function addBreakpointStop(session, result) {
         breakpoint: hit,
         registers: registersWithCounters(session),
     };
+}
+
+function hexAddress(address) {
+    return `0x${address.toString(16).padStart(4, "0")}`;
+}
+
+const SidewaysStart = 0x8000;
+const SidewaysSize = 0x4000;
+const AndyEnd = 0x9000;
+const RomselBankMask = 0x0f;
+const RomselAndy = 0x80;
+const SidewaysBanks = 16;
+const AndySlot = SidewaysBanks;
+// The longest 6502 instruction, so executed addresses no further apart are taken as one stretch of code.
+const MaxInstructionLength = 3;
+
+/**
+ * Counts how often each instruction address runs, telling apart the sideways
+ * banks (and on a Master, ANDY) that share &8000 to &BFFF.
+ */
+class Coverage {
+    constructor(session) {
+        const cpu = session._machine.processor;
+        const hasBanks = !findModel(session.modelName).isAtom;
+        const isMaster = cpu.model.isMaster;
+        const counts = new Float64Array(0x10000 + (SidewaysBanks + 1) * SidewaysSize);
+        this.counts = counts;
+        this.stop = session.onExecute((pc) => {
+            const offset = pc - SidewaysStart;
+            if (!hasBanks || offset < 0 || offset >= SidewaysSize) {
+                counts[pc]++;
+                return;
+            }
+            const romsel = cpu.romsel;
+            const slot = isMaster && romsel & RomselAndy && pc < AndyEnd ? AndySlot : romsel & RomselBankMask;
+            counts[0x10000 + slot * SidewaysSize + offset]++;
+        });
+    }
+
+    /** Each stretch of executed code and the busiest addresses, at most `maxRanges` and `maxHotSpots` of them. */
+    summary({ maxRanges, maxHotSpots }) {
+        const regions = [{ base: 0, start: 0, length: 0x10000 }];
+        for (let slot = 0; slot <= AndySlot; slot++) {
+            regions.push({
+                base: 0x10000 + slot * SidewaysSize,
+                start: SidewaysStart,
+                length: slot === AndySlot ? AndyEnd - SidewaysStart : SidewaysSize,
+                bank: slot === AndySlot ? "andy" : slot,
+            });
+        }
+        const ranges = [];
+        const executed = [];
+        let instructions = 0;
+        for (const { base, start, length, bank } of regions) {
+            let range = null;
+            for (let offset = 0; offset < length; offset++) {
+                const count = this.counts[base + offset];
+                if (!count) continue;
+                const address = start + offset;
+                instructions += count;
+                executed.push({ address, bank, count });
+                if (range && address - range.end <= MaxInstructionLength) {
+                    range.end = address;
+                    range.addresses++;
+                    range.executions += count;
+                } else {
+                    range = { order: ranges.length, start: address, end: address, bank, addresses: 1, executions: count };
+                    ranges.push(range);
+                }
+            }
+        }
+        const busiestFirst = (a, b) => b.executions - a.executions;
+        const shown = ranges.length <= maxRanges ? ranges : ranges.toSorted(busiestFirst).slice(0, maxRanges);
+        const hotSpots = executed.sort((a, b) => b.count - a.count).slice(0, maxHotSpots);
+        return {
+            instructions_executed: instructions,
+            unique_addresses: executed.length,
+            ranges_total: ranges.length,
+            ranges: shown
+                .sort((a, b) => a.order - b.order)
+                .map(({ start, end, bank, addresses, executions }) => ({
+                    startHex: hexAddress(start),
+                    endHex: hexAddress(end),
+                    bank,
+                    addresses,
+                    executions,
+                })),
+            hot_spots: hotSpots.map(({ address, bank, count }) => ({ addressHex: hexAddress(address), bank, count })),
+        };
+    }
+}
+
+/** Stops any coverage the session is recording and forgets it, returning what was recorded. */
+function endCoverage(session) {
+    const coverage = coverages.get(session);
+    if (!coverage) return null;
+    coverage.stop();
+    coverages.delete(session);
+    return coverage;
 }
 
 function requireSession(sessionId) {
@@ -388,6 +490,7 @@ server.tool(
     async ({ session_id }) => {
         const s = sessions.get(session_id);
         if (s) {
+            endCoverage(s);
             s.destroy();
             sessions.delete(session_id);
         }
@@ -718,6 +821,64 @@ server.tool(
             completed,
             output,
         });
+        return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: run_until_address
+// ---------------------------------------------------------------------------
+
+server.tool(
+    "run_until_address",
+    "Run until the PC reaches an address, stopping before the instruction there runs, or until " +
+        "timeout_secs of emulated time pass. Like a one-off execute breakpoint: give bank to stop only while " +
+        "that sideways bank is paged in. reached says whether it got there; stopped_reason is 'address', " +
+        "'timeout', or 'breakpoint' if a set breakpoint fired first ('pending_breakpoint' for a hit an earlier " +
+        "call left unreported, as run_for_cycles does). Reports cycles_run, the registers where it stopped, and " +
+        "the text output. The next run starts with the instruction it stopped at.",
+    {
+        session_id: z.string().describe("Session ID from create_machine"),
+        address: z.number().int().min(0).max(0xffff).describe("Address to run to (0–65535)"),
+        bank: z
+            .number()
+            .int()
+            .min(0)
+            .max(15)
+            .optional()
+            .describe("Only stop while this sideways bank is paged in at &8000–&BFFF, to stop in one ROM"),
+        timeout_secs: z.number().positive().default(30).describe("Max emulated seconds to run before giving up"),
+        clear: z
+            .boolean()
+            .default(true)
+            .describe("If true (default), clear the output buffer after returning it. Pass false to peek."),
+    },
+    async ({ session_id, address, bank, timeout_secs, clear }) => {
+        const session = requireSession(session_id);
+        const pending = pendingBreakpointResult(session, clear, { reached: false, cycles_run: 0 });
+        if (pending) return { content: [{ type: "text", text: JSON.stringify(pending) }] };
+
+        const startCycles = session.elapsedCycles;
+        let reached = true;
+        try {
+            await session.runUntilAddress(address, timeout_secs, { bank });
+        } catch (err) {
+            // How runUntilAddress says the run ended without reaching the address.
+            if (!(err instanceof AssertionError)) throw err;
+            reached = false;
+        }
+        const breakpoint = takeBreakpointHit(session);
+        const result = {
+            reached,
+            stopped_reason: reached ? "address" : breakpoint ? "breakpoint" : "timeout",
+            address,
+            addressHex: hexAddress(address),
+            bank,
+            cycles_run: session.elapsedCycles - startCycles,
+            output: session.drainOutput({ clear }),
+            registers: registersWithCounters(session),
+        };
+        if (breakpoint) result.breakpoint = breakpoint;
         return { content: [{ type: "text", text: JSON.stringify(result) }] };
     },
 );
@@ -1128,6 +1289,47 @@ server.tool(
 );
 
 // ---------------------------------------------------------------------------
+// Code coverage tools
+// ---------------------------------------------------------------------------
+
+server.tool(
+    "start_coverage",
+    "Start recording which instructions the host CPU executes, and how often, as the machine runs under " +
+        "any tool. Addresses in &8000–&BFFF are kept apart by the sideways bank paged in (and on a Master, " +
+        "ANDY over &8000–&8FFF). Recording never stops the machine. Use stop_coverage to stop and get the " +
+        "summary. Starting again discards what was recorded so far.",
+    {
+        session_id: z.string().describe("Session ID from create_machine"),
+    },
+    async ({ session_id }) => {
+        const session = requireSession(session_id);
+        const restarted = endCoverage(session) !== null;
+        coverages.set(session, new Coverage(session));
+        return { content: [{ type: "text", text: JSON.stringify({ recording: true, restarted }) }] };
+    },
+);
+
+server.tool(
+    "stop_coverage",
+    "Stop recording coverage and summarise it: instructions_executed, unique_addresses, the stretches of " +
+        "code executed (ranges, each from the first to the last instruction address run in it, with bank " +
+        "(0–15, or 'andy') for &8000–&BFFF, the count of addresses and executions in it), and hot_spots, the addresses run " +
+        "most often. Over max_ranges stretches, the busiest are kept; ranges_total says how many there were.",
+    {
+        session_id: z.string().describe("Session ID from create_machine"),
+        max_ranges: z.number().int().min(0).max(2000).default(100).describe("Most stretches of code to list"),
+        max_hot_spots: z.number().int().min(0).max(500).default(20).describe("Most hot spot addresses to list"),
+    },
+    async ({ session_id, max_ranges, max_hot_spots }) => {
+        const session = requireSession(session_id);
+        const coverage = endCoverage(session);
+        if (!coverage) throw new Error("No coverage is being recorded on this session. Call start_coverage first.");
+        const summary = coverage.summary({ maxRanges: max_ranges, maxHotSpots: max_hot_spots });
+        return { content: [{ type: "text", text: JSON.stringify(summary) }] };
+    },
+);
+
+// ---------------------------------------------------------------------------
 // State snapshot tools
 // ---------------------------------------------------------------------------
 
@@ -1179,7 +1381,9 @@ server.tool(
 server.tool(
     "restore_state",
     "Put a session back to a state saved by save_state. Memory, registers and " +
-        "the cycle count rewind; breakpoints and the frame counter carry on. The " +
+        "the cycle count rewind; breakpoints and the frame counter carry on. A state " +
+        "saved where a breakpoint or run_until_address stopped the machine runs on past " +
+        "that instruction when next run; otherwise a breakpoint at the restored PC fires. The " +
         "target session need not be the one the state was saved from, so a state " +
         "can be restored into several machines to run from the same start point, " +
         "but it must be the same model with the same tube, Econet and station number.",
