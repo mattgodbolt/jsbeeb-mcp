@@ -147,7 +147,7 @@ For multi-step interaction (debugging, iterative development):
 
 | Tool               | Description                                                    |
 | ------------------ | -------------------------------------------------------------- |
-| `create_machine`   | Boot any machine jsbeeb has (BBC B, Master 128, Acorn Atom), returns a `session_id`; optional `tube` attaches a 65C02 second processor, and `econet` a network with a file server a Master can log on to (`station_id` sets the station number) |
+| `create_machine`   | Boot any machine jsbeeb has (BBC B, Master 128, Acorn Atom), returns a `session_id`; optional `tube` attaches a 65C02 second processor, and `econet` a network with a file server a Master can log on to (`station_id` sets the station number), and `video_nula` a VideoNuLA |
 | `destroy_machine`  | Free a session                                                 |
 | `load_basic`       | Tokenise + load BBC BASIC source into PAGE                     |
 | `type_input`       | Type text at the current keyboard prompt, then one RETURN unless the text ends in a newline |
@@ -171,7 +171,7 @@ For multi-step interaction (debugging, iterative development):
 | `reset`            | Reset the machine; with `autoboot: true`, holds SHIFT during reset (SHIFT+BREAK) |
 | `boot_disc`        | Load a disc image (file, archive or URL) and autoboot it (SHIFT+BREAK) |
 | `save_state`       | Snapshot the whole machine server-side, returns a `state_id`   |
-| `restore_state`    | Put a session back to a saved state (same model, tube, Econet and station only) |
+| `restore_state`    | Put a session back to a saved state (same model, tube, Econet, station and VideoNuLA only) |
 | `list_states`      | List saved states, newest first                                |
 | `delete_state`     | Discard a saved state and free its memory                      |
 
@@ -250,7 +250,7 @@ they outlive the session they came from. The server holds at most 100 of them
 (roughly 0.4MB each) and refuses a further `save_state` rather than evicting one
 you may be about to restore. That is also what lets one state seed
 several machines: `restore_state` accepts any session of the same model,
-fitted the same way (tube, Econet and station number), so a single starting
+fitted the same way (tube, Econet, station number and VideoNuLA), so a single starting
 point can be run forward in parallel.
 
 ### Composable keyboard control
