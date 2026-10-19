@@ -1,5 +1,18 @@
 # Changelog
 
+## [4.3.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v4.2.1...v4.3.0) (2026-10-19)
+
+
+### Features
+
+* fit a VideoNuLA with create_machine's video_nula ([#58](https://github.com/mattgodbolt/jsbeeb-mcp/issues/58)) ([253c6d1](https://github.com/mattgodbolt/jsbeeb-mcp/commit/253c6d14b027bd14314aff4824aad102225bdbd2))
+
+
+### Bug Fixes
+
+* **deps:** bump jsbeeb to 2.10.0 ([#56](https://github.com/mattgodbolt/jsbeeb-mcp/issues/56)) ([d68b01f](https://github.com/mattgodbolt/jsbeeb-mcp/commit/d68b01f2f8001155c475c9d362974a5c3112dd37))
+* **deps:** bump zod ([#55](https://github.com/mattgodbolt/jsbeeb-mcp/issues/55)) ([61fe576](https://github.com/mattgodbolt/jsbeeb-mcp/commit/61fe576ab68a988859194873e088b580f7b71a33))
+
 ## [4.2.1](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v4.2.0...v4.2.1) (2026-10-18)
 
 
