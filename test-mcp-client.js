@@ -8,6 +8,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { findModel } from "jsbeeb";
+import sharp from "sharp";
 import { writeFileSync, readFileSync, unlinkSync } from "fs";
 import { crc32 } from "zlib";
 import { tmpdir } from "os";
@@ -871,6 +872,33 @@ async function main() {
     for (const id of [masterNetSid, plainMasterSid, otherNetSid]) await callTool(client, "destroy_machine", { session_id: id });
     const atomNet = await client.callTool({ name: "create_machine", arguments: { model: "Atom", econet: true } });
     ok("the Atom refuses Econet", atomNet.isError === true);
+
+    // --- VideoNuLA ---
+    console.log("\n--- VideoNuLA ---");
+    // Colour 0 to full red through the NuLA palette at &FE23; a plain ULA takes the writes as &FE21's.
+    async function backgroundAfterNulaRed(sid) {
+        await callTool(client, "type_input", { session_id: sid, text: "MODE 1:?&FE23=&0F:?&FE23=0" });
+        await callTool(client, "run_until_prompt", { session_id: sid });
+        await callTool(client, "run_frames", { session_id: sid, count: 2 });
+        const shot = await callTool(client, "screenshot", { session_id: sid, active_only: true });
+        const png = Buffer.from(shot.content.find((c) => c.type === "image").data, "base64");
+        const { data, info } = await sharp(png).raw().toBuffer({ resolveWithObject: true });
+        const centre = (Math.floor(info.height / 2) * info.width + Math.floor(info.width / 2)) * info.channels;
+        return [...data.subarray(centre, centre + 3)];
+    }
+    const nulaSid = JSON.parse(textContent(await callTool(client, "create_machine", { video_nula: true }))).session_id;
+    const nulaBackground = await backgroundAfterNulaRed(nulaSid);
+    ok("a VideoNuLA takes a palette written at &FE23", nulaBackground[0] > 200 && nulaBackground[1] < 50 && nulaBackground[2] < 50);
+    const ulaSid = JSON.parse(textContent(await callTool(client, "create_machine", {}))).session_id;
+    const ulaBackground = await backgroundAfterNulaRed(ulaSid);
+    ok("a machine without one does not", !(ulaBackground[0] > 200 && ulaBackground[1] < 50 && ulaBackground[2] < 50));
+    const { state_id: nulaState } = JSON.parse(textContent(await callTool(client, "save_state", { session_id: nulaSid })));
+    const intoUla = await client.callTool({ name: "restore_state", arguments: { session_id: ulaSid, state_id: nulaState } });
+    ok("a VideoNuLA state will not restore into a machine without one", intoUla.isError === true && textContent(intoUla).includes("video_nula true there, false here"));
+    await callTool(client, "delete_state", { state_id: nulaState });
+    for (const id of [nulaSid, ulaSid]) await callTool(client, "destroy_machine", { session_id: id });
+    const atomNula = await client.callTool({ name: "create_machine", arguments: { model: "Atom", video_nula: true } });
+    ok("the Atom refuses a VideoNuLA", atomNula.isError === true);
 
     // --- Atom ---
     console.log("\n--- Atom ---");

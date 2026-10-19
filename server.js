@@ -246,7 +246,7 @@ async function autobootMachine(session, hard = true) {
 const sessions = new Map(); // sessionId → MachineSession
 
 // What create_machine fitted: MachineSession.restore doesn't check the machine is fitted as the saved one was.
-const fittings = new WeakMap(); // MachineSession → { tube, econet, station_id }
+const fittings = new WeakMap(); // MachineSession → { tube, econet, station_id, video_nula }
 
 // Snapshots are big (RAM plus every ROM bank), so they stay here and only their
 // IDs cross the wire.  They outlive the session they came from, which is what
@@ -455,11 +455,25 @@ server.tool(
             .max(FileServerStationId - 1)
             .optional()
             .describe(`This machine's Econet station number, with econet (default ${DefaultStationId})`),
+        video_nula: z
+            .boolean()
+            .default(false)
+            .describe(
+                "Fit a VideoNuLA in place of the video ULA, for programs that use its extended palette " +
+                    "and modes (written at &FE22 and &FE23). Not on the Atom",
+            ),
     },
-    async ({ model, boot_timeout_secs, tube, econet, station_id }) => {
-        if (econet && findModel(model).isAtom) throw new Error("The Atom has no Econet");
-        const session = new MachineSession(model, { tube, econet, stationId: station_id });
-        fittings.set(session, { tube, econet, station_id: econet ? (station_id ?? DefaultStationId) : undefined });
+    async ({ model, boot_timeout_secs, tube, econet, station_id, video_nula }) => {
+        const { isAtom } = findModel(model);
+        if (econet && isAtom) throw new Error("The Atom has no Econet");
+        if (video_nula && isAtom) throw new Error("The Atom has no video ULA to replace with a VideoNuLA");
+        const session = new MachineSession(model, { tube, econet, stationId: station_id, hasVideoNula: video_nula });
+        fittings.set(session, {
+            tube,
+            econet,
+            station_id: econet ? (station_id ?? DefaultStationId) : undefined,
+            video_nula,
+        });
         await session.initialise();
         const bootOutput = await session.boot(boot_timeout_secs);
         const id = newSessionId();
@@ -1399,7 +1413,7 @@ server.tool(
         "(read and write breakpoints stop after their instruction has run). The " +
         "target session need not be the one the state was saved from, so a state " +
         "can be restored into several machines to run from the same start point, " +
-        "but it must be the same model with the same tube, Econet and station number.",
+        "but it must be the same model with the same tube, Econet, station number and VideoNuLA.",
     {
         session_id: z.string().describe("Session ID to restore into"),
         state_id: z.string().describe("State ID from save_state"),
