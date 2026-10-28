@@ -134,7 +134,10 @@ const PagingParams = {
         .min(0)
         .max(15)
         .optional()
-        .describe("Sideways ROM/RAM bank to page at &8000–&BFFF for this access, instead of the one ROMSEL selects"),
+        .describe(
+            "Sideways ROM/RAM bank to page at &8000–&BFFF for this access, instead of the one ROMSEL selects " +
+                "(12 to 15 on B-stock and B-MOS0.10, which have four sockets)",
+        ),
     shadow: z
         .boolean()
         .optional()
@@ -488,7 +491,8 @@ server.tool(
             .describe(
                 "Sideways ROMs to fit in the banks they name, before extra_roms fill the rest. Fails for a bank " +
                     "the model has no socket for (B-stock and B-MOS0.10 have only 12 to 15), one its own ROMs or " +
-                    "fittings fill, or one named twice. Not on the Atom",
+                    "fittings fill, or one named twice. A sideways RAM bank takes the image as its contents. " +
+                    "Not on the Atom",
             ),
     },
     async ({ model, boot_timeout_secs, tube, econet, station_id, video_nula, extra_roms, bank_roms }) => {
@@ -1450,7 +1454,8 @@ server.tool(
         "(read and write breakpoints stop after their instruction has run). The " +
         "target session need not be the one the state was saved from, so a state " +
         "can be restored into several machines to run from the same start point, " +
-        "but it must be the same model with the same tube, Econet, station number and VideoNuLA.",
+        "but it must be the same model with the same tube, Econet, station number and VideoNuLA. " +
+        "Sideways ROMs come with the state, replacing the target's own.",
     {
         session_id: z.string().describe("Session ID to restore into"),
         state_id: z.string().describe("State ID from save_state"),

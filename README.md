@@ -187,8 +187,9 @@ other file on this machine (a bare path is looked for under that folder), an
 `http(s):` URL, or `github:owner/repo[@ref]/path`; a zip holding a `.rom` is
 opened. The machine is not created if a ROM does not fit: more `extra_roms`
 than free banks, or a `bank_roms` bank the model has no socket for (B-stock
-and B-MOS0.10 have four, banks 12 to 15), already fills with its own ROMs, or
-is named twice. The Atom takes neither.
+and B-MOS0.10 have four, banks 12 to 15), one its own ROMs or fittings fill,
+or one named twice. A sideways RAM bank takes the image as its contents. The
+Atom takes neither.
 
 ### Running to an address
 
@@ -235,8 +236,8 @@ every response carries `paging`: `romsel` as last written; `bank`, the
 sideways bank that pages in at `&8000`–`&BFFF` (B-stock and B-MOS0.10 have
 four sockets, banks 12 to 15, and ROMSEL's low two bits pick one); and on a
 Master `acccon`, whose bit 2 puts shadow RAM at `&3000`–`&7FFF`. To
-sample a particular bank regardless, pass `bank` (0–15) or, on a Master,
-`shadow` (true for shadow RAM, false for main); the map is put back afterwards.
+sample a particular bank regardless, pass `bank` (0–15, or 12–15 on B-stock
+and B-MOS0.10) or, on a Master, `shadow` (true for shadow RAM, false for main); the map is put back afterwards.
 `write_memory` takes the same two.
 
 ### Checkpointing with save_state
@@ -269,7 +270,8 @@ they outlive the session they came from. The server holds at most 100 of them
 you may be about to restore. That is also what lets one state seed
 several machines: `restore_state` accepts any session of the same model,
 fitted the same way (tube, Econet, station number and VideoNuLA), so a single starting
-point can be run forward in parallel.
+point can be run forward in parallel. Sideways ROMs come with the state, replacing
+the target's own.
 
 ### Composable keyboard control
 
@@ -315,7 +317,7 @@ full list for the model.
 - ✅ Screenshots (real Video chip output → PNG via `sharp`)
 - ✅ Memory read/write
 - ✅ CPU register inspection
-- ✅ BBC B (8271 and 1770, and a stock B with no sideways RAM) and Master 128 models, booting DFS, ADFS or (with `econet`) ANFS, and the Acorn Atom
+- ✅ BBC B (8271 and 1770, a stock B with four ROM sockets and no sideways RAM, and one with MOS 0.10) and Master 128 models, booting DFS, ADFS or (with `econet`) ANFS, and the Acorn Atom
 - ✅ Multiple concurrent sessions
 - ✅ Econet, with a file server a Master can log on to (`*NET`, then `*I AM SYST`); a BBC B gets the network
   hardware but no NFS ROM
