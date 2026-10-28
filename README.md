@@ -237,7 +237,8 @@ sideways bank that pages in at `&8000`–`&BFFF` (B-stock and B-MOS0.10 have
 four sockets, banks 12 to 15, and ROMSEL's low two bits pick one); and on a
 Master `acccon`, whose bit 2 puts shadow RAM at `&3000`–`&7FFF`. To
 sample a particular bank regardless, pass `bank` (0–15, or 12–15 on B-stock
-and B-MOS0.10) or, on a Master, `shadow` (true for shadow RAM, false for main); the map is put back afterwards.
+and B-MOS0.10) or, on a Master, `shadow` (true for shadow RAM, false for
+main); the map is put back afterwards.
 `write_memory` takes the same two.
 
 ### Checkpointing with save_state

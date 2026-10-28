@@ -904,7 +904,10 @@ server.tool(
             .min(0)
             .max(15)
             .optional()
-            .describe("Only stop while this sideways bank is paged in at &8000–&BFFF, to stop in one ROM"),
+            .describe(
+                "Only stop while this sideways bank is paged in at &8000–&BFFF, to stop in one ROM " +
+                    "(12 to 15 on B-stock and B-MOS0.10)",
+            ),
         timeout_secs: z.number().positive().default(30).describe("Max emulated seconds to run before giving up"),
         clear: z
             .boolean()
@@ -1314,7 +1317,10 @@ server.tool(
             .min(0)
             .max(15)
             .optional()
-            .describe("Only break while this sideways bank is paged in at &8000–&BFFF, to stop in one ROM"),
+            .describe(
+                "Only break while this sideways bank is paged in at &8000–&BFFF, to stop in one ROM " +
+                    "(12 to 15 on B-stock and B-MOS0.10)",
+            ),
     },
     async ({ session_id, address, type, bank }) => {
         const session = requireSession(session_id);
