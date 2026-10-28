@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.4.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v4.3.0...v4.4.0) (2026-10-28)
+
+
+### Features
+
+* fit sideways ROMs with create_machine, and credit coverage to the bank a four-socket B pages ([#60](https://github.com/mattgodbolt/jsbeeb-mcp/issues/60)) ([d0f7551](https://github.com/mattgodbolt/jsbeeb-mcp/commit/d0f7551be99671dacb9fecaff4bf6b430fdc6e37))
+
 ## [4.3.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v4.2.1...v4.3.0) (2026-10-19)
 
 
