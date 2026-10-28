@@ -147,7 +147,7 @@ For multi-step interaction (debugging, iterative development):
 
 | Tool               | Description                                                    |
 | ------------------ | -------------------------------------------------------------- |
-| `create_machine`   | Boot any machine jsbeeb has (BBC B, Master 128, Acorn Atom), returns a `session_id`; optional `tube` attaches a 65C02 second processor, and `econet` a network with a file server a Master can log on to (`station_id` sets the station number), and `video_nula` a VideoNuLA |
+| `create_machine`   | Boot any machine jsbeeb has (BBC B, Master 128, Acorn Atom), returns a `session_id`; optional `tube` attaches a 65C02 second processor, and `econet` a network with a file server a Master can log on to (`station_id` sets the station number), and `video_nula` a VideoNuLA; `extra_roms` and `bank_roms` fit sideways ROMs (see [Sideways ROMs](#sideways-roms)) |
 | `destroy_machine`  | Free a session                                                 |
 | `load_basic`       | Tokenise + load BBC BASIC source into PAGE                     |
 | `type_input`       | Type text at the current keyboard prompt, then one RETURN unless the text ends in a newline |
@@ -174,6 +174,21 @@ For multi-step interaction (debugging, iterative development):
 | `restore_state`    | Put a session back to a saved state (same model, tube, Econet, station and VideoNuLA only) |
 | `list_states`      | List saved states, newest first                                |
 | `delete_state`     | Discard a saved state and free its memory                      |
+
+### Sideways ROMs
+
+`create_machine` fits extra sideways ROMs on any BBC model. `extra_roms` is a
+list of ROMs for the banks the model leaves free, highest first, passing over
+its sideways RAM; `bank_roms` puts each ROM in the bank it names, as
+`[{ "bank": 15, "rom": "ats-3.0.rom" }]`, before `extra_roms` fill the rest.
+A ROM is named as jsbeeb names one: a file under jsbeeb's own `roms` folder
+by its name there (`ats-3.0.rom`, `b1770/zADFS.ROM`), a `file:` URL for any
+other file on this machine (a bare path is looked for under that folder), an
+`http(s):` URL, or `github:owner/repo[@ref]/path`; a zip holding a `.rom` is
+opened. The machine is not created if a ROM does not fit: more `extra_roms`
+than free banks, or a `bank_roms` bank the model has no socket for (B-stock
+and B-MOS0.10 have four, banks 12 to 15), already fills with its own ROMs, or
+is named twice. The Atom takes neither.
 
 ### Running to an address
 
@@ -310,6 +325,7 @@ full list for the model.
   `http(s):` URL, into either drive
 - ✅ Tapes: `.uef` files and zips, from a file or a URL
 - ✅ Low-level keyboard control (key_down/key_up)
+- ✅ Extra sideways ROMs, in the free banks or the banks named
 - ✅ Breakpoints on execute, read or write, optionally only while a given sideways bank is paged in
 - ✅ Running to an address, and code coverage by address and sideways bank
 

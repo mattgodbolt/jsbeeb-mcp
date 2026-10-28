@@ -149,6 +149,16 @@ function pagingReport(session, { bank, shadow }) {
     return paging;
 }
 
+const RomRef = z
+    .string()
+    .min(1)
+    .describe(
+        "A sideways ROM image, as jsbeeb names one: a file under jsbeeb's own roms folder by its name there " +
+            "('ats-3.0.rom', 'b1770/zADFS.ROM'), a file: URL for any other file on this machine (a bare path " +
+            "is looked for under that folder), an http(s): URL, or 'github:owner/repo[@ref]/path'. A zip holding " +
+            "a .rom is opened",
+    );
+
 const DiscParams = {
     image_path: z
         .string()
@@ -460,12 +470,40 @@ server.tool(
                 "Fit a VideoNuLA in place of the video ULA, for programs that use its extended palette " +
                     "and modes (written at &FE22 and &FE23). Not on the Atom",
             ),
+        extra_roms: z
+            .array(RomRef)
+            .optional()
+            .describe(
+                "Sideways ROMs to fit in the banks the model leaves free, highest first, passing over its " +
+                    "sideways RAM. Fails if there are not enough free banks. Not on the Atom",
+            ),
+        bank_roms: z
+            .array(
+                z.object({
+                    bank: z.number().int().min(0).max(15).describe("The sideways bank to fit it in"),
+                    rom: RomRef,
+                }),
+            )
+            .optional()
+            .describe(
+                "Sideways ROMs to fit in the banks they name, before extra_roms fill the rest. Fails for a bank " +
+                    "the model has no socket for (B-stock and B-MOS0.10 have only 12 to 15), one its own ROMs or " +
+                    "fittings fill, or one named twice. Not on the Atom",
+            ),
     },
-    async ({ model, boot_timeout_secs, tube, econet, station_id, video_nula }) => {
+    async ({ model, boot_timeout_secs, tube, econet, station_id, video_nula, extra_roms, bank_roms }) => {
         const { isAtom } = findModel(model);
         if (econet && isAtom) throw new Error("The Atom has no Econet");
         if (video_nula && isAtom) throw new Error("The Atom has no video ULA to replace with a VideoNuLA");
-        const session = new MachineSession(model, { tube, econet, stationId: station_id, hasVideoNula: video_nula });
+        if (extra_roms?.length && isAtom) throw new Error("The Atom has no sideways ROM banks to load a ROM into");
+        const session = new MachineSession(model, {
+            tube,
+            econet,
+            stationId: station_id,
+            hasVideoNula: video_nula,
+            extraRoms: extra_roms,
+            bankRoms: bank_roms,
+        });
         fittings.set(session, {
             tube,
             econet,

@@ -912,6 +912,46 @@ async function main() {
     const atomNula = await client.callTool({ name: "create_machine", arguments: { model: "Atom", video_nula: true } });
     ok("the Atom refuses a VideoNuLA", atomNula.isError === true);
 
+    // --- Sideways ROMs ---
+    console.log("\n--- sideways ROMs ---");
+    async function romTitle(sid, bank, length) {
+        const { bytes } = JSON.parse(textContent(await callTool(client, "read_memory", { session_id: sid, address: 0x8009, length, bank })));
+        return String.fromCharCode(...bytes);
+    }
+    const romsSid = JSON.parse(
+        textContent(
+            await callTool(client, "create_machine", {
+                model: "B-stock",
+                bank_roms: [{ bank: 15, rom: "ats-3.0.rom" }],
+                extra_roms: ["ample.rom"],
+            }),
+        ),
+    ).session_id;
+    ok("bank_roms fits a ROM in the bank it names", (await romTitle(romsSid, 15, 3)) === "ATS");
+    ok("extra_roms fills the highest bank left free", (await romTitle(romsSid, 14, 5)) === "AMPLE");
+    await callTool(client, "type_input", { session_id: romsSid, text: "*HELP" });
+    const help = JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id: romsSid })));
+    ok("and the MOS finds both", help.screenText.includes("ATS") && help.screenText.includes("AMPLE"));
+    await callTool(client, "destroy_machine", { session_id: romsSid });
+    const bank16 = await client.callTool({ name: "create_machine", arguments: { bank_roms: [{ bank: 16, rom: "ats-3.0.rom" }] } });
+    ok("a bank past 15 is refused", bank16.isError === true);
+    const unnamed = await client.callTool({ name: "create_machine", arguments: { extra_roms: [""] } });
+    ok("an empty ROM name is refused", unnamed.isError === true);
+    const taken = await client.callTool({
+        name: "create_machine",
+        arguments: { model: "B-stock", bank_roms: [{ bank: 13, rom: "ats-3.0.rom" }] },
+    });
+    ok("a bank the model's own ROMs fill is refused", taken.isError === true && textContent(taken).includes("already holds"));
+    const noSocket = await client.callTool({
+        name: "create_machine",
+        arguments: { model: "B-stock", bank_roms: [{ bank: 3, rom: "ats-3.0.rom" }] },
+    });
+    ok("as is a bank with no socket", noSocket.isError === true && textContent(noSocket).includes("4 ROM sockets"));
+    for (const romArgs of [{ extra_roms: ["ats-3.0.rom"] }, { bank_roms: [{ bank: 15, rom: "ats-3.0.rom" }] }]) {
+        const atomRoms = await client.callTool({ name: "create_machine", arguments: { model: "Atom", ...romArgs } });
+        ok(`the Atom refuses ${Object.keys(romArgs)[0]}`, atomRoms.isError === true && textContent(atomRoms).includes("no sideways ROM banks"));
+    }
+
     // --- Atom ---
     console.log("\n--- Atom ---");
     const atomResult = await callTool(client, "create_machine", { model: "Atom" });
