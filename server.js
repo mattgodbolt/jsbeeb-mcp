@@ -134,7 +134,10 @@ const PagingParams = {
         .min(0)
         .max(15)
         .optional()
-        .describe("Sideways ROM/RAM bank to page at &8000–&BFFF for this access, instead of the one ROMSEL selects"),
+        .describe(
+            "Sideways ROM/RAM bank to page at &8000–&BFFF for this access, instead of the one ROMSEL selects " +
+                "(12 to 15 on B-stock and B-MOS0.10, which have four sockets)",
+        ),
     shadow: z
         .boolean()
         .optional()
@@ -148,6 +151,16 @@ function pagingReport(session, { bank, shadow }) {
     if (shadow !== undefined) paging.shadow = shadow;
     return paging;
 }
+
+const RomRef = z
+    .string()
+    .min(1)
+    .describe(
+        "A sideways ROM image, as jsbeeb names one: a file under jsbeeb's own roms folder by its name there " +
+            "('ats-3.0.rom', 'b1770/zADFS.ROM'), a file: URL for any other file on this machine (a bare path " +
+            "is looked for under that folder), an http(s): URL, or 'github:owner/repo[@ref]/path'. A zip holding " +
+            "a .rom is opened",
+    );
 
 const DiscParams = {
     image_path: z
@@ -311,7 +324,6 @@ const AddressSpaceSize = 0x10000;
 const SidewaysStart = 0x8000;
 const SidewaysSize = 0x4000;
 const AndyEnd = 0x9000;
-const RomselBankMask = 0x0f;
 const RomselAndy = 0x80;
 const SidewaysBanks = 16;
 const AndySlot = SidewaysBanks;
@@ -335,8 +347,7 @@ class Coverage {
                 counts[pc]++;
                 return;
             }
-            const romsel = cpu.romsel;
-            const slot = isMaster && romsel & RomselAndy && pc < AndyEnd ? AndySlot : romsel & RomselBankMask;
+            const slot = isMaster && cpu.romsel & RomselAndy && pc < AndyEnd ? AndySlot : cpu.pagedBank;
             counts[AddressSpaceSize + slot * SidewaysSize + offset]++;
         });
     }
@@ -462,12 +473,41 @@ server.tool(
                 "Fit a VideoNuLA in place of the video ULA, for programs that use its extended palette " +
                     "and modes (written at &FE22 and &FE23). Not on the Atom",
             ),
+        extra_roms: z
+            .array(RomRef)
+            .optional()
+            .describe(
+                "Sideways ROMs to fit in the banks the model leaves free, highest first, passing over its " +
+                    "sideways RAM. Fails if there are not enough free banks. Not on the Atom",
+            ),
+        bank_roms: z
+            .array(
+                z.object({
+                    bank: z.number().int().min(0).max(15).describe("The sideways bank to fit it in"),
+                    rom: RomRef,
+                }),
+            )
+            .optional()
+            .describe(
+                "Sideways ROMs to fit in the banks they name, before extra_roms fill the rest. Fails for a bank " +
+                    "the model has no socket for (B-stock and B-MOS0.10 have only 12 to 15), one its own ROMs or " +
+                    "fittings fill, or one named twice. A sideways RAM bank takes the image as its contents. " +
+                    "Not on the Atom",
+            ),
     },
-    async ({ model, boot_timeout_secs, tube, econet, station_id, video_nula }) => {
+    async ({ model, boot_timeout_secs, tube, econet, station_id, video_nula, extra_roms, bank_roms }) => {
         const { isAtom } = findModel(model);
         if (econet && isAtom) throw new Error("The Atom has no Econet");
         if (video_nula && isAtom) throw new Error("The Atom has no video ULA to replace with a VideoNuLA");
-        const session = new MachineSession(model, { tube, econet, stationId: station_id, hasVideoNula: video_nula });
+        if (extra_roms?.length && isAtom) throw new Error("The Atom has no sideways ROM banks to load a ROM into");
+        const session = new MachineSession(model, {
+            tube,
+            econet,
+            stationId: station_id,
+            hasVideoNula: video_nula,
+            extraRoms: extra_roms,
+            bankRoms: bank_roms,
+        });
         fittings.set(session, {
             tube,
             econet,
@@ -678,8 +718,9 @@ server.tool(
 server.tool(
     "read_memory",
     "Read bytes from the BBC Micro's memory map. Returns an array of decimal byte values plus a hex dump, " +
-        "and paging: romsel (the sideways bank at &8000–&BFFF) and on a Master acccon, so a read of paged " +
-        "memory says which bank it came from. Pass bank or shadow to read a particular one instead.",
+        "and paging: romsel as last written, bank (the sideways bank it pages in at &8000–&BFFF) and on a " +
+        "Master acccon, so a read of paged memory says which bank it came from. Pass bank or shadow to read a " +
+        "particular one instead.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
         address: z.number().int().min(0).max(0xffff).describe("Start address (0–65535)"),
@@ -863,7 +904,10 @@ server.tool(
             .min(0)
             .max(15)
             .optional()
-            .describe("Only stop while this sideways bank is paged in at &8000–&BFFF, to stop in one ROM"),
+            .describe(
+                "Only stop while this sideways bank is paged in at &8000–&BFFF, to stop in one ROM " +
+                    "(12 to 15 on B-stock and B-MOS0.10)",
+            ),
         timeout_secs: z.number().positive().default(30).describe("Max emulated seconds to run before giving up"),
         clear: z
             .boolean()
@@ -1273,7 +1317,10 @@ server.tool(
             .min(0)
             .max(15)
             .optional()
-            .describe("Only break while this sideways bank is paged in at &8000–&BFFF, to stop in one ROM"),
+            .describe(
+                "Only break while this sideways bank is paged in at &8000–&BFFF, to stop in one ROM " +
+                    "(12 to 15 on B-stock and B-MOS0.10)",
+            ),
     },
     async ({ session_id, address, type, bank }) => {
         const session = requireSession(session_id);
@@ -1413,7 +1460,8 @@ server.tool(
         "(read and write breakpoints stop after their instruction has run). The " +
         "target session need not be the one the state was saved from, so a state " +
         "can be restored into several machines to run from the same start point, " +
-        "but it must be the same model with the same tube, Econet, station number and VideoNuLA.",
+        "but it must be the same model with the same tube, Econet, station number and VideoNuLA. " +
+        "Sideways ROMs come with the state, replacing the target's own.",
     {
         session_id: z.string().describe("Session ID to restore into"),
         state_id: z.string().describe("State ID from save_state"),

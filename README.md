@@ -147,7 +147,7 @@ For multi-step interaction (debugging, iterative development):
 
 | Tool               | Description                                                    |
 | ------------------ | -------------------------------------------------------------- |
-| `create_machine`   | Boot any machine jsbeeb has (BBC B, Master 128, Acorn Atom), returns a `session_id`; optional `tube` attaches a 65C02 second processor, and `econet` a network with a file server a Master can log on to (`station_id` sets the station number), and `video_nula` a VideoNuLA |
+| `create_machine`   | Boot any machine jsbeeb has (BBC B, Master 128, Acorn Atom), returns a `session_id`; optional `tube` attaches a 65C02 second processor, and `econet` a network with a file server a Master can log on to (`station_id` sets the station number), and `video_nula` a VideoNuLA; `extra_roms` and `bank_roms` fit sideways ROMs (see [Sideways ROMs](#sideways-roms)) |
 | `destroy_machine`  | Free a session                                                 |
 | `load_basic`       | Tokenise + load BBC BASIC source into PAGE                     |
 | `type_input`       | Type text at the current keyboard prompt, then one RETURN unless the text ends in a newline |
@@ -175,6 +175,22 @@ For multi-step interaction (debugging, iterative development):
 | `list_states`      | List saved states, newest first                                |
 | `delete_state`     | Discard a saved state and free its memory                      |
 
+### Sideways ROMs
+
+`create_machine` fits extra sideways ROMs on any BBC model. `extra_roms` is a
+list of ROMs for the banks the model leaves free, highest first, passing over
+its sideways RAM; `bank_roms` puts each ROM in the bank it names, as
+`[{ "bank": 15, "rom": "ats-3.0.rom" }]`, before `extra_roms` fill the rest.
+A ROM is named as jsbeeb names one: a file under jsbeeb's own `roms` folder
+by its name there (`ats-3.0.rom`, `b1770/zADFS.ROM`), a `file:` URL for any
+other file on this machine (a bare path is looked for under that folder), an
+`http(s):` URL, or `github:owner/repo[@ref]/path`; a zip holding a `.rom` is
+opened. The machine is not created if a ROM does not fit: more `extra_roms`
+than free banks, or a `bank_roms` bank the model has no socket for (B-stock
+and B-MOS0.10 have four, banks 12 to 15), one its own ROMs or fittings fill,
+or one named twice. A sideways RAM bank takes the image as its contents. The
+Atom takes neither.
+
 ### Running to an address
 
 `run_until_address` is a one-off execute breakpoint: it runs until the PC
@@ -199,7 +215,8 @@ counting and returns a summary rather than the counts:
 - `instructions_executed` and `unique_addresses`
 - `ranges`: each stretch of code run, from the first to the last instruction
   address in it (addresses no more than 3 bytes apart, the longest 6502
-  instruction, count as one stretch), with its `bank` (0 to 15, or `andy`),
+  instruction, count as one stretch), with its `bank` (0 to 15, or `andy`;
+  on B-stock and B-MOS0.10, the socket's bank 12 to 15 whatever ROMSEL paged it),
   how many addresses ran and how many times. Past `max_ranges` (100) only the
   busiest are listed, and `ranges_total` says how many there were
 - `hot_spots`: the `max_hot_spots` (20) addresses run most often
@@ -215,10 +232,13 @@ saved at that stop is restored and run on.
 ### Paged memory
 
 `read_memory` and `save_memory` read whatever the machine has paged in, so
-every response carries `paging`: `romsel`, the sideways bank at `&8000`–`&BFFF`,
-and on a Master `acccon`, whose bit 2 puts shadow RAM at `&3000`–`&7FFF`. To
-sample a particular bank regardless, pass `bank` (0–15) or, on a Master,
-`shadow` (true for shadow RAM, false for main); the map is put back afterwards.
+every response carries `paging`: `romsel` as last written; `bank`, the
+sideways bank that pages in at `&8000`–`&BFFF` (B-stock and B-MOS0.10 have
+four sockets, banks 12 to 15, and ROMSEL's low two bits pick one); and on a
+Master `acccon`, whose bit 2 puts shadow RAM at `&3000`–`&7FFF`. To
+sample a particular bank regardless, pass `bank` (0–15, or 12–15 on B-stock
+and B-MOS0.10) or, on a Master, `shadow` (true for shadow RAM, false for
+main); the map is put back afterwards.
 `write_memory` takes the same two.
 
 ### Checkpointing with save_state
@@ -251,7 +271,8 @@ they outlive the session they came from. The server holds at most 100 of them
 you may be about to restore. That is also what lets one state seed
 several machines: `restore_state` accepts any session of the same model,
 fitted the same way (tube, Econet, station number and VideoNuLA), so a single starting
-point can be run forward in parallel.
+point can be run forward in parallel. Sideways ROMs come with the state, replacing
+the target's own.
 
 ### Composable keyboard control
 
@@ -297,7 +318,7 @@ full list for the model.
 - ✅ Screenshots (real Video chip output → PNG via `sharp`)
 - ✅ Memory read/write
 - ✅ CPU register inspection
-- ✅ BBC B (8271 and 1770, and a stock B with no sideways RAM) and Master 128 models, booting DFS, ADFS or (with `econet`) ANFS, and the Acorn Atom
+- ✅ BBC B (8271 and 1770, a stock B with four ROM sockets and no sideways RAM, and one with MOS 0.10) and Master 128 models, booting DFS, ADFS or (with `econet`) ANFS, and the Acorn Atom
 - ✅ Multiple concurrent sessions
 - ✅ Econet, with a file server a Master can log on to (`*NET`, then `*I AM SYST`); a BBC B gets the network
   hardware but no NFS ROM
@@ -307,6 +328,7 @@ full list for the model.
   `http(s):` URL, into either drive
 - ✅ Tapes: `.uef` files and zips, from a file or a URL
 - ✅ Low-level keyboard control (key_down/key_up)
+- ✅ Extra sideways ROMs, in the free banks or the banks named
 - ✅ Breakpoints on execute, read or write, optionally only while a given sideways bank is paged in
 - ✅ Running to an address, and code coverage by address and sideways bank
 
