@@ -833,6 +833,18 @@ async function main() {
     );
     await callTool(client, "destroy_machine", { session_id: andySid });
 
+    // MOS 0.10 pages BASIC, in socket bank 12, by writing 0 to ROMSEL.
+    const aliasedSid = JSON.parse(textContent(await callTool(client, "create_machine", { model: "B-MOS0.10" }))).session_id;
+    await callTool(client, "start_coverage", { session_id: aliasedSid });
+    await callTool(client, "type_input", { session_id: aliasedSid, text: "PRINT 6*7" });
+    await callTool(client, "run_until_prompt", { session_id: aliasedSid });
+    const aliasedCoverage = JSON.parse(
+        textContent(await callTool(client, "stop_coverage", { session_id: aliasedSid, max_ranges: 2000 })),
+    );
+    ok("code run through an aliased ROMSEL is credited to the socket's bank", aliasedCoverage.ranges.some((r) => r.bank === 12));
+    ok("and not to the ROMSEL value", aliasedCoverage.ranges.every((r) => typeof r.bank !== "number" || r.bank >= 12));
+    await callTool(client, "destroy_machine", { session_id: aliasedSid });
+
     // --- Econet ---
     console.log("\n--- econet ---");
     const econetSid = JSON.parse(

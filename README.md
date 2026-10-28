@@ -199,7 +199,8 @@ counting and returns a summary rather than the counts:
 - `instructions_executed` and `unique_addresses`
 - `ranges`: each stretch of code run, from the first to the last instruction
   address in it (addresses no more than 3 bytes apart, the longest 6502
-  instruction, count as one stretch), with its `bank` (0 to 15, or `andy`),
+  instruction, count as one stretch), with its `bank` (0 to 15, or `andy`;
+  on B-stock and B-MOS0.10, the socket's bank 12 to 15 whatever ROMSEL paged it),
   how many addresses ran and how many times. Past `max_ranges` (100) only the
   busiest are listed, and `ranges_total` says how many there were
 - `hot_spots`: the `max_hot_spots` (20) addresses run most often
@@ -215,8 +216,10 @@ saved at that stop is restored and run on.
 ### Paged memory
 
 `read_memory` and `save_memory` read whatever the machine has paged in, so
-every response carries `paging`: `romsel`, the sideways bank at `&8000`–`&BFFF`,
-and on a Master `acccon`, whose bit 2 puts shadow RAM at `&3000`–`&7FFF`. To
+every response carries `paging`: `romsel` as last written; `bank`, the
+sideways bank that pages in at `&8000`–`&BFFF` (B-stock and B-MOS0.10 have
+four sockets, banks 12 to 15, and ROMSEL's low two bits pick one); and on a
+Master `acccon`, whose bit 2 puts shadow RAM at `&3000`–`&7FFF`. To
 sample a particular bank regardless, pass `bank` (0–15) or, on a Master,
 `shadow` (true for shadow RAM, false for main); the map is put back afterwards.
 `write_memory` takes the same two.

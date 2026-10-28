@@ -311,7 +311,6 @@ const AddressSpaceSize = 0x10000;
 const SidewaysStart = 0x8000;
 const SidewaysSize = 0x4000;
 const AndyEnd = 0x9000;
-const RomselBankMask = 0x0f;
 const RomselAndy = 0x80;
 const SidewaysBanks = 16;
 const AndySlot = SidewaysBanks;
@@ -335,8 +334,7 @@ class Coverage {
                 counts[pc]++;
                 return;
             }
-            const romsel = cpu.romsel;
-            const slot = isMaster && romsel & RomselAndy && pc < AndyEnd ? AndySlot : romsel & RomselBankMask;
+            const slot = isMaster && cpu.romsel & RomselAndy && pc < AndyEnd ? AndySlot : cpu.pagedBank;
             counts[AddressSpaceSize + slot * SidewaysSize + offset]++;
         });
     }
@@ -678,8 +676,9 @@ server.tool(
 server.tool(
     "read_memory",
     "Read bytes from the BBC Micro's memory map. Returns an array of decimal byte values plus a hex dump, " +
-        "and paging: romsel (the sideways bank at &8000–&BFFF) and on a Master acccon, so a read of paged " +
-        "memory says which bank it came from. Pass bank or shadow to read a particular one instead.",
+        "and paging: romsel as last written, bank (the sideways bank it pages in at &8000–&BFFF) and on a " +
+        "Master acccon, so a read of paged memory says which bank it came from. Pass bank or shadow to read a " +
+        "particular one instead.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
         address: z.number().int().min(0).max(0xffff).describe("Start address (0–65535)"),
