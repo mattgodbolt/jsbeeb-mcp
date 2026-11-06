@@ -30,6 +30,7 @@ import { MachineSession, allModels, findModel } from "jsbeeb";
 import { BBC } from "jsbeeb/src/keymap.js";
 import { ATOM } from "jsbeeb/src/keymap-atom.js";
 import { DefaultStationId, FileServerStationId } from "jsbeeb/src/econet.js";
+import { PageHistory } from "jsbeeb/src/replay.js";
 import { AssertionError } from "node:assert";
 import { writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -515,6 +516,7 @@ server.tool(
             video_nula,
         });
         await session.initialise();
+        session.keepHistory(PageHistory);
         const bootOutput = await session.boot(boot_timeout_secs);
         const id = newSessionId();
         sessions.set(id, session);
@@ -1355,6 +1357,163 @@ server.tool(
         }
         session.removeBreakpoint(id);
         return { content: [{ type: "text", text: `Breakpoint ${id} removed` }] };
+    },
+);
+
+// ---------------------------------------------------------------------------
+// Replay debugging
+// ---------------------------------------------------------------------------
+
+// A snapshot is about 200KB (main RAM plus sideways RAM), so these cap a session's history near 35MB.
+const MaxRecentSnapshots = 50;
+const MaxHistorySeconds = 120;
+
+const ReplayNote =
+    "Replays the history the session keeps (see the history tool) from a snapshot before where it lands. " +
+    "It cannot go back past something no replay can repeat: text from type_input, a load_basic, a " +
+    "disc or tape change, a write_memory with bank or shadow, a read_memory of a device register, or the " +
+    "cassette motor running; reset (hard) and restore_state start the history afresh. When it cannot go back, " +
+    "moved is false, refusal says why, and the machine is left as it was. A step back leaves breakpoint hits " +
+    "cleared and the captured text as it was, counts no frames, and captures no sound writes.";
+
+/** What a step back reports: where the machine landed, or why it stayed put. */
+function stepBackResult(session, refusal) {
+    if (refusal) return { content: [{ type: "text", text: JSON.stringify({ moved: false, refusal }) }] };
+    const registers = registersWithCounters(session);
+    const result = { moved: true, pcHex: hexAddress(registers.pc), registers };
+    return { content: [{ type: "text", text: JSON.stringify(result) }] };
+}
+
+function historyReport(session) {
+    const { recent, seconds, snapshots, oldestCycle } = session.historyState();
+    const report = { recent, seconds, snapshots };
+    if (oldestCycle !== null) {
+        const back = session.elapsedCycles - oldestCycle;
+        report.reaches_back_cycles = back;
+        report.reaches_back_seconds = back / findModel(session.modelName).cyclesPerSecond;
+    }
+    return report;
+}
+
+server.tool(
+    "step_back",
+    "Step the machine back one instruction, or with over back over the call the last instruction returned " +
+        "from, or with to_cycle back to that cycle (an instruction's start, as who_wrote reports one). " +
+        `${ReplayNote} Reports moved, and where it landed as read_registers does.`,
+    {
+        session_id: z.string().describe("Session ID from create_machine"),
+        over: z.boolean().default(false).describe("Step back over the call the last instruction returned from"),
+        to_cycle: z
+            .number()
+            .int()
+            .min(0)
+            .optional()
+            .describe("Step back to this elapsed cycle instead, as who_wrote gives a write's cycle"),
+    },
+    async ({ session_id, over, to_cycle }) => {
+        const session = requireSession(session_id);
+        if (over && to_cycle !== undefined) throw new Error("Give over or to_cycle, not both");
+        const refusal = to_cycle === undefined ? session.stepBack(over) : session.stepBackTo(to_cycle);
+        return stepBackResult(session, refusal);
+    },
+);
+
+server.tool(
+    "step_back_out",
+    "Step the machine back to the JSR, BRK or interrupt that entered the routine it is in, the reverse of " +
+        `running to its RTS or RTI. ${ReplayNote}`,
+    { session_id: z.string().describe("Session ID from create_machine") },
+    async ({ session_id }) => {
+        const session = requireSession(session_id);
+        return stepBackResult(session, session.stepBackOut());
+    },
+);
+
+server.tool(
+    "reverse_continue",
+    "Run the machine backwards to where it would have stopped at the newest hit of any breakpoint set with " +
+        "set_breakpoint before now: before the instruction for an execute breakpoint, after the instruction " +
+        "for a read or write. Every hit counts. Running on from there does not stop at the same breakpoint " +
+        `again. ${ReplayNote}`,
+    { session_id: z.string().describe("Session ID from create_machine") },
+    async ({ session_id }) => {
+        const session = requireSession(session_id);
+        return stepBackResult(session, session.reverseContinue());
+    },
+);
+
+server.tool(
+    "who_wrote",
+    "Find the last write to a byte, as the machine pages it now, by replaying the history the session keeps, " +
+        "newest first, and leaving the machine as it was. found says whether a write was found. A write reports " +
+        "pc and pcHex, the instruction that wrote it (null when an input such as write_memory did), value, the " +
+        "cycle it started at (step_back with to_cycle goes there), and cycles_ago and seconds_ago. With nothing " +
+        "found, searched_cycles and why say how far back it looked and why it went no further; refusal says why " +
+        "it could not search at all (no history, ROM, or something it cannot replay since the newest snapshot).",
+    {
+        session_id: z.string().describe("Session ID from create_machine"),
+        address: z.number().int().min(0).max(0xffff).describe("Address of the byte (0–65535)"),
+    },
+    async ({ session_id, address }) => {
+        const session = requireSession(session_id);
+        const searchedFor = { address, addressHex: hexAddress(address) };
+        const { refusal, write, searched, stoppedBy } = session.whoWrote(address);
+        const { cyclesPerSecond } = findModel(session.modelName);
+        let result;
+        if (refusal) {
+            result = { ...searchedFor, found: false, refusal };
+        } else if (!write) {
+            const why = stoppedBy ? `cannot go back past ${stoppedBy}` : "that is as far back as the history goes";
+            result = { ...searchedFor, found: false, searched_cycles: searched, why };
+        } else {
+            const ago = session.elapsedCycles - write.cycle;
+            result = {
+                ...searchedFor,
+                found: true,
+                pc: write.pc,
+                pcHex: write.pc === null ? null : hexAddress(write.pc),
+                value: write.value,
+                cycle: write.cycle,
+                cycles_ago: ago,
+                seconds_ago: ago / cyclesPerSecond,
+            };
+        }
+        return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    },
+);
+
+server.tool(
+    "history",
+    "See, or set, how much history the session keeps for step_back, step_back_out, reverse_continue and " +
+        `who_wrote. Each machine starts keeping what the jsbeeb page keeps: ${PageHistory.recent} recent ` +
+        `snapshots, at most one a frame, and ${PageHistory.seconds} more, at most one a second, about 200KB ` +
+        "each; keeping them slows a run somewhat. Give recent or seconds to change " +
+        "it (both 0 turns history off), which forgets the history kept so far. Reports the sizes, how many " +
+        "snapshots there are, and how far back the oldest reaches.",
+    {
+        session_id: z.string().describe("Session ID from create_machine"),
+        recent: z
+            .number()
+            .int()
+            .min(0)
+            .max(MaxRecentSnapshots)
+            .optional()
+            .describe("Recent snapshots to keep, at most one a frame"),
+        seconds: z
+            .number()
+            .int()
+            .min(0)
+            .max(MaxHistorySeconds)
+            .optional()
+            .describe("Snapshots to keep further back, at most one a second"),
+    },
+    async ({ session_id, recent, seconds }) => {
+        const session = requireSession(session_id);
+        if (recent !== undefined || seconds !== undefined) {
+            const kept = session.historyState();
+            session.keepHistory({ recent: recent ?? kept.recent, seconds: seconds ?? kept.seconds });
+        }
+        return { content: [{ type: "text", text: JSON.stringify(historyReport(session)) }] };
     },
 );
 

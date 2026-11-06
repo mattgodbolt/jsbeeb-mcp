@@ -159,6 +159,11 @@ For multi-step interaction (debugging, iterative development):
 | `run_for_cycles`   | Run N CPU cycles, or up to a breakpoint; reports `cycles_run`, the count actually run (drains output by default — use `clear: false` to peek without consuming) |
 | `run_frames`       | Advance N painted frames — use this, not `run_for_cycles`, to step the display |
 | `run_until_address` | Run until the PC reaches an address (in one sideways `bank` if given), or `timeout_secs` pass; reports `reached`, `stopped_reason` and the registers |
+| `step_back`        | Step back one instruction, back `over` the call just returned from, or back `to_cycle` (see [Stepping back](#stepping-back)) |
+| `step_back_out`    | Step back to the JSR, BRK or interrupt that entered the current routine |
+| `reverse_continue` | Run backwards to the newest hit of a breakpoint set with `set_breakpoint` |
+| `who_wrote`        | Find the last write to a byte: the instruction, the value, the cycle and how long ago |
+| `history`          | See or set how much history the machine keeps for stepping back |
 | `start_coverage`   | Start counting every instruction address the host CPU executes |
 | `stop_coverage`    | Stop counting and summarise: stretches of code run, by bank, and the hottest addresses |
 | `load_disc`        | Put a disc in drive 0 or 1, from a file, an archive or a URL   |
@@ -204,6 +209,34 @@ itself does not change that: the response is `reached: true` and `address`,
 with the `breakpoint` attached. A hit an earlier call left unreported comes back
 first as `pending_breakpoint`, with `cycles_run` 0 and nothing run. The next
 run starts with the instruction it stopped at.
+
+### Stepping back
+
+Every machine keeps a history as it runs, as the jsbeeb page does for its
+debugger: 3 recent snapshots, at most one a frame, and 30 more, at most one a
+second, about 200KB each. `step_back`, `step_back_out`, `reverse_continue` and
+`who_wrote` replay from a snapshot before where they look, with what the session
+put in since (keys, BREAK, `write_memory`, a soft `reset`), and check that the
+replay ends where the machine is. Each reports `moved` (or `found` for
+`who_wrote`) and, when it cannot go back, a `refusal` saying why, with the
+machine left as it was. `history` with `recent: 0, seconds: 0` turns it off;
+a hard `reset` and `restore_state` start it afresh.
+
+A replay cannot repeat, and so a step back cannot cross:
+
+- text from `type_input`, whose keys go in part way through an instruction (run
+  on after it to have history past it), or a `load_basic`
+- a disc or tape change, or the cassette motor running
+- a `write_memory` with `bank` or `shadow`, or a `read_memory` of a device
+  register, which can change the device
+- Econet
+
+`reverse_continue` stops where a forward run would have: before the instruction
+for an execute breakpoint, after it for a read or write. `who_wrote` looks for
+the byte as the machine pages it now, newest stretch first; its `cycle` is where
+the writing instruction started, so `step_back` with `to_cycle` goes there. A
+write by `write_memory` reports `pc: null`. Keeping history slows a run
+somewhat; `history` with smaller sizes, or none, trades that back.
 
 ### Code coverage
 
