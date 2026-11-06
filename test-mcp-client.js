@@ -1068,7 +1068,7 @@ async function main() {
     const both = await client.callTool({ name: "step_back", arguments: { session_id: replaySid, over: true, to_cycle: 0 } });
     ok("step_back refuses over and to_cycle together", both.isError === true);
 
-    // Reading the System VIA's timer 1 low byte clears the timer's interrupt flag, which the replay would miss.
+    // Reading the System VIA's timer 1 low byte clears the timer's interrupt flag; peeking at it does not.
     const sysViaT1Low = 0xfe44, sysViaIfr = 0xfe4d, timer1Flag = 0x40;
     const ifr = async () => (await tool("read_memory", { address: sysViaIfr, length: 1 })).bytes[0];
     await tool("run_frames", { count: 2 });

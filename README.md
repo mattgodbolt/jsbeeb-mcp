@@ -237,7 +237,7 @@ for an execute breakpoint, after it for a read or write. `who_wrote` looks for
 the byte as the machine pages it now, newest stretch first; its `cycle` is where
 the writing instruction started, so `step_back` with `to_cycle` goes there. A
 write by `write_memory` reports `pc: null`. Keeping history slows a run
-somewhat; `history` with smaller sizes, or none, trades that back. Coverage
+somewhat, whatever its sizes; `history` with none buys that back. Coverage
 counts what a step back undoes, and counts it again as the machine runs on.
 
 ### Code coverage
