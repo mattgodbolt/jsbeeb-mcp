@@ -858,7 +858,11 @@ async function main() {
     ok("the station number reads back from the Econet links", /^\s+42$/m.test(station.screenText));
     const econetHistory = JSON.parse(textContent(await callTool(client, "history", { session_id: econetSid })));
     const econetKeep = await client.callTool({ name: "history", arguments: { session_id: econetSid, recent: 3 } });
-    ok("an Econet machine keeps no history, and refuses to start one", econetHistory.snapshots === 0 && econetKeep.isError === true);
+    const econetOff = await client.callTool({ name: "history", arguments: { session_id: econetSid, recent: 0, seconds: 0 } });
+    ok(
+        "an Econet machine keeps no history, refuses to start one, and takes none",
+        econetHistory.snapshots === 0 && econetKeep.isError === true && !econetOff.isError,
+    );
     await callTool(client, "destroy_machine", { session_id: econetSid });
     const stationAlone = await client.callTool({ name: "create_machine", arguments: { station_id: 42 } });
     ok("a station number without Econet is refused", stationAlone.isError === true);
@@ -1075,6 +1079,13 @@ async function main() {
     const flagged = (await ifr()) & timer1Flag;
     await callTool(client, "disassemble", { session_id: replaySid, address: sysViaT1Low, count: 1 });
     ok("disassemble at a device register leaves the device as it was", flagged !== 0 && ((await ifr()) & timer1Flag) === flagged);
+
+    const longRunCycles = 2000000;
+    const startedAt = (await tool("read_registers", {})).elapsed_cycles;
+    const longRun = call("run_for_cycles", { cycles: longRunCycles });
+    const meanwhile = await tool("read_registers", {});
+    await longRun;
+    ok("a session's calls wait for the one before to finish", meanwhile.elapsed_cycles >= startedAt + longRunCycles);
 
     const off = await tool("history", { recent: 0, seconds: 0 });
     ok("history turns off", off.snapshots === 0 && off.reaches_back_cycles === undefined);

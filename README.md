@@ -143,7 +143,8 @@ repo (`@~latest` takes the tag of its latest release), or an `http(s):` or
 
 ### Session-based tools
 
-For multi-step interaction (debugging, iterative development):
+For multi-step interaction (debugging, iterative development). Calls that name
+the same `session_id` run one at a time, in the order they arrive:
 
 | Tool               | Description                                                    |
 | ------------------ | -------------------------------------------------------------- |
