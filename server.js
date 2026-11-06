@@ -446,7 +446,7 @@ const sessionQueues = new Map(); // sessionId → its latest call, settled
 function tool(name, description, schema, handler) {
     server.tool(name, description, schema, (args, extra) => {
         const { session_id } = args;
-        if (session_id === undefined) return handler(args, extra);
+        if (!session_id) return handler(args, extra);
         const call = (sessionQueues.get(session_id) ?? Promise.resolve()).then(() => handler(args, extra));
         const settled = call.then(
             () => {},

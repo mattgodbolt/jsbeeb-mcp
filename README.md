@@ -143,8 +143,9 @@ repo (`@~latest` takes the tag of its latest release), or an `http(s):` or
 
 ### Session-based tools
 
-For multi-step interaction (debugging, iterative development). Calls that name
-the same `session_id` run one at a time, in the order they arrive:
+For multi-step interaction (debugging, iterative development), these tools
+work on a session `create_machine` returns. Calls that name the same
+`session_id` run one at a time, in the order they arrive.
 
 | Tool               | Description                                                    |
 | ------------------ | -------------------------------------------------------------- |
