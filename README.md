@@ -214,7 +214,8 @@ run starts with the instruction it stopped at.
 
 Every machine `create_machine` boots keeps a history as it runs, as the jsbeeb
 page does for its debugger: 3 recent snapshots, at most one a frame, and 30 more,
-at most one a second, about 200KB each (265KB with a tube). An Econet machine
+at most one a second, each about 130KB on a Master to 200KB on a B (65KB more
+with a tube). An Econet machine
 keeps none, as no replay can repeat the network. `step_back`, `step_back_out`, `reverse_continue` and
 `who_wrote` replay from a snapshot before where they look, with what the session
 put in since (keys, BREAK, `write_memory`, a soft `reset`), and check that the

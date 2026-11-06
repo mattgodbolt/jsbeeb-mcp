@@ -123,7 +123,7 @@ function secondsOfCycles(modelName, seconds) {
     return seconds * findModel(modelName).cyclesPerSecond;
 }
 
-function secondsOf(session, cycles) {
+function cyclesToSeconds(session, cycles) {
     return cycles / findModel(session.modelName).cyclesPerSecond;
 }
 
@@ -1397,7 +1397,7 @@ function historyReport(session) {
     if (oldestCycle !== null) {
         const back = session.elapsedCycles - oldestCycle;
         report.reaches_back_cycles = back;
-        report.reaches_back_seconds = secondsOf(session, back);
+        report.reaches_back_seconds = cyclesToSeconds(session, back);
     }
     return report;
 }
@@ -1481,7 +1481,7 @@ server.tool(
                 value: write.value,
                 cycle: write.cycle,
                 cycles_ago: ago,
-                seconds_ago: secondsOf(session, ago),
+                seconds_ago: cyclesToSeconds(session, ago),
             };
         }
         return { content: [{ type: "text", text: JSON.stringify(result) }] };
@@ -1492,12 +1492,12 @@ server.tool(
     "history",
     "See, or set, how much history the session keeps for step_back, step_back_out, reverse_continue and " +
         `who_wrote. Each machine starts keeping what the jsbeeb page keeps: ${PageHistory.recent} recent ` +
-        `snapshots, at most one a frame, and ${PageHistory.seconds} more, at most one a second, about 200KB ` +
-        "each (265KB with a tube); keeping them slows a run somewhat. An Econet machine keeps none. Give recent " +
-        "or seconds to change it (both 0 turns history off; a lone ring of 1 holds only the newest snapshot, " +
-        "which leaves a step back nothing to start from), which forgets the history kept so far. Reports the " +
-        "sizes, how many " +
-        "snapshots there are, and how far back the oldest reaches.",
+        `snapshots, at most one a frame, and ${PageHistory.seconds} more, at most one a second, each about ` +
+        "130KB on a Master to 200KB on a B (65KB more with a tube); keeping them slows a run somewhat. An " +
+        "Econet machine keeps none, and refuses to start. Give recent or seconds to change it (both 0 turns " +
+        "history off; a lone ring of 1 holds only the newest snapshot, which leaves a step back nothing to " +
+        "start from), which forgets the history kept so far. Reports the sizes, how many snapshots there are, " +
+        "and how far back the oldest reaches.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
         recent: z
@@ -1518,6 +1518,9 @@ server.tool(
     async ({ session_id, recent, seconds }) => {
         const session = requireSession(session_id);
         if (recent !== undefined || seconds !== undefined) {
+            if (fittings.get(session).econet) {
+                throw new Error("An Econet machine keeps no history, as no replay can repeat the network");
+            }
             const kept = session.historyState();
             session.keepHistory({ recent: recent ?? kept.recent, seconds: seconds ?? kept.seconds });
         }

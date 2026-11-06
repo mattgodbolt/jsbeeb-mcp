@@ -856,6 +856,9 @@ async function main() {
     await callTool(client, "type_input", { session_id: econetSid, text: "PRINT ?&FE18" });
     const station = JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id: econetSid })));
     ok("the station number reads back from the Econet links", /^\s+42$/m.test(station.screenText));
+    const econetHistory = JSON.parse(textContent(await callTool(client, "history", { session_id: econetSid })));
+    const econetKeep = await client.callTool({ name: "history", arguments: { session_id: econetSid, recent: 3 } });
+    ok("an Econet machine keeps no history, and refuses to start one", econetHistory.snapshots === 0 && econetKeep.isError === true);
     await callTool(client, "destroy_machine", { session_id: econetSid });
     const stationAlone = await client.callTool({ name: "create_machine", arguments: { station_id: 42 } });
     ok("a station number without Econet is refused", stationAlone.isError === true);
@@ -1033,9 +1036,13 @@ async function main() {
     await tool("step_back", { to_cycle: reversed.registers.elapsed_cycles });
     await call("clear_breakpoint", { id: 0 });
 
+    const searchedAt = (await tool("read_registers", {})).elapsed_cycles;
     const wrote = await tool("who_wrote", { address: counter });
     console.log("who_wrote:", JSON.stringify(wrote));
-    ok("who_wrote names the instruction and the value", wrote.found && wrote.pc === subAt && wrote.value === reversed.registers.x);
+    ok(
+        "who_wrote names the instruction and the value, and how long ago",
+        wrote.found && wrote.pc === subAt && wrote.value === reversed.registers.x && wrote.cycles_ago === searchedAt - wrote.cycle,
+    );
     const toWrite = await tool("step_back", { to_cycle: wrote.cycle });
     ok("step_back to_cycle goes to the write", toWrite.moved && toWrite.registers.pc === subAt && toWrite.registers.elapsed_cycles === wrote.cycle);
     const untouched = await tool("who_wrote", { address: 0x1b00 });
@@ -1060,6 +1067,14 @@ async function main() {
     );
     const both = await client.callTool({ name: "step_back", arguments: { session_id: replaySid, over: true, to_cycle: 0 } });
     ok("step_back refuses over and to_cycle together", both.isError === true);
+
+    // Reading the System VIA's timer 1 low byte clears the timer's interrupt flag, which the replay would miss.
+    const sysViaT1Low = 0xfe44, sysViaIfr = 0xfe4d, timer1Flag = 0x40;
+    const ifr = async () => (await tool("read_memory", { address: sysViaIfr, length: 1 })).bytes[0];
+    await tool("run_frames", { count: 2 });
+    const flagged = (await ifr()) & timer1Flag;
+    await callTool(client, "disassemble", { session_id: replaySid, address: sysViaT1Low, count: 1 });
+    ok("disassemble at a device register leaves the device as it was", flagged !== 0 && ((await ifr()) & timer1Flag) === flagged);
 
     const off = await tool("history", { recent: 0, seconds: 0 });
     ok("history turns off", off.snapshots === 0 && off.reaches_back_cycles === undefined);
