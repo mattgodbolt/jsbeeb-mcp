@@ -212,9 +212,10 @@ run starts with the instruction it stopped at.
 
 ### Stepping back
 
-Every machine keeps a history as it runs, as the jsbeeb page does for its
-debugger: 3 recent snapshots, at most one a frame, and 30 more, at most one a
-second, about 200KB each. `step_back`, `step_back_out`, `reverse_continue` and
+Every machine `create_machine` boots keeps a history as it runs, as the jsbeeb
+page does for its debugger: 3 recent snapshots, at most one a frame, and 30 more,
+at most one a second, about 200KB each (265KB with a tube). An Econet machine
+keeps none, as no replay can repeat the network. `step_back`, `step_back_out`, `reverse_continue` and
 `who_wrote` replay from a snapshot before where they look, with what the session
 put in since (keys, BREAK, `write_memory`, a soft `reset`), and check that the
 replay ends where the machine is. Each reports `moved` (or `found` for
@@ -226,17 +227,17 @@ A replay cannot repeat, and so a step back cannot cross:
 
 - text from `type_input`, whose keys go in part way through an instruction (run
   on after it to have history past it), or a `load_basic`
-- a disc or tape change, or the cassette motor running
+- a disc or tape change, a write to a disc, or the cassette motor running
 - a `write_memory` with `bank` or `shadow`, or a `read_memory` of a device
   register, which can change the device
-- Econet
 
 `reverse_continue` stops where a forward run would have: before the instruction
 for an execute breakpoint, after it for a read or write. `who_wrote` looks for
 the byte as the machine pages it now, newest stretch first; its `cycle` is where
 the writing instruction started, so `step_back` with `to_cycle` goes there. A
 write by `write_memory` reports `pc: null`. Keeping history slows a run
-somewhat; `history` with smaller sizes, or none, trades that back.
+somewhat; `history` with smaller sizes, or none, trades that back. Coverage
+counts what a step back undoes, and counts it again as the machine runs on.
 
 ### Code coverage
 

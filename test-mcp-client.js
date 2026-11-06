@@ -998,7 +998,10 @@ async function main() {
     const tool = async (name, args) => JSON.parse(textContent(await call(name, args)));
     const keptAtStart = await tool("history", {});
     console.log("history:", JSON.stringify(keptAtStart));
-    ok("history is kept from the start, as the page keeps it", keptAtStart.recent === 3 && keptAtStart.seconds === 30 && keptAtStart.snapshots > 0);
+    ok(
+        "history is kept from the start, as the page keeps it, and says how far back it reaches",
+        keptAtStart.recent === 3 && keptAtStart.seconds === 30 && keptAtStart.snapshots > 0 && keptAtStart.reaches_back_cycles > 0,
+    );
 
     // SEI and LDX #0, then for ever JSR to STX &1900 and RTS, and INX.
     const loopAt = 0x2000, callAt = 0x2003, afterCall = 0x2006, jmpAt = 0x2007, subAt = 0x2010, rtsAt = 0x2013;
@@ -1023,8 +1026,11 @@ async function main() {
     const reversed = await tool("reverse_continue", {});
     ok(
         "reverse_continue lands on the breakpoint's previous hit",
-        reversed.moved && reversed.registers.pc === afterCall && reversed.registers.x === stop.registers.x - 1,
+        reversed.moved && reversed.registers.pc === afterCall && reversed.registers.x === ((stop.registers.x + 0xff) & 0xff),
     );
+    const onwards = await tool("run_for_cycles", { cycles: 40000 });
+    ok("and runs on from there to the next hit", onwards.registers.pc === afterCall && onwards.registers.x === stop.registers.x);
+    await tool("step_back", { to_cycle: reversed.registers.elapsed_cycles });
     await call("clear_breakpoint", { id: 0 });
 
     const wrote = await tool("who_wrote", { address: counter });
@@ -1032,6 +1038,11 @@ async function main() {
     ok("who_wrote names the instruction and the value", wrote.found && wrote.pc === subAt && wrote.value === reversed.registers.x);
     const toWrite = await tool("step_back", { to_cycle: wrote.cycle });
     ok("step_back to_cycle goes to the write", toWrite.moved && toWrite.registers.pc === subAt && toWrite.registers.elapsed_cycles === wrote.cycle);
+    const untouched = await tool("who_wrote", { address: 0x1b00 });
+    ok(
+        "who_wrote says how far back it looked when nothing wrote the byte, stopped by the typed CALL",
+        !untouched.found && untouched.searched_cycles > 0 && /part way through an instruction/.test(untouched.why),
+    );
     const rom = await tool("who_wrote", { address: 0xc000 });
     ok("who_wrote refuses ROM, which no write changes", !rom.found && /ROM/.test(rom.refusal));
     await call("write_memory", { address: 0x1a00, bytes: [0x55] });
@@ -1040,8 +1051,13 @@ async function main() {
     ok("who_wrote finds a write_memory, with no pc", poked.found && poked.pc === null && poked.value === 0x55);
 
     await call("write_memory", { address: 0x1a00, bytes: [0x66], bank: 0 });
+    const beforeRefusal = await tool("read_registers", {});
     const pastBank = await tool("step_back", {});
-    ok("step_back refuses to go back past a write to a chosen bank, and stays put", !pastBank.moved && /paged in/.test(pastBank.refusal));
+    const afterRefusal = await tool("read_registers", {});
+    ok(
+        "step_back refuses to go back past a write to a chosen bank, and stays put",
+        !pastBank.moved && /paged in/.test(pastBank.refusal) && afterRefusal.elapsed_cycles === beforeRefusal.elapsed_cycles,
+    );
     const both = await client.callTool({ name: "step_back", arguments: { session_id: replaySid, over: true, to_cycle: 0 } });
     ok("step_back refuses over and to_cycle together", both.isError === true);
 

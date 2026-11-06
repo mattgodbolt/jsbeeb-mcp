@@ -123,6 +123,10 @@ function secondsOfCycles(modelName, seconds) {
     return seconds * findModel(modelName).cyclesPerSecond;
 }
 
+function secondsOf(session, cycles) {
+    return cycles / findModel(session.modelName).cyclesPerSecond;
+}
+
 /**
  * Which memory a read or write hits where the map is paged: the sideways
  * bank at &8000 to &BFFF, and on a Master shadow or main RAM at &3000 to
@@ -516,7 +520,8 @@ server.tool(
             video_nula,
         });
         await session.initialise();
-        session.keepHistory(PageHistory);
+        // No replay can repeat a network, so an Econet machine keeps no history to pay for.
+        if (!econet) session.keepHistory(PageHistory);
         const bootOutput = await session.boot(boot_timeout_secs);
         const id = newSessionId();
         sessions.set(id, session);
@@ -1364,15 +1369,17 @@ server.tool(
 // Replay debugging
 // ---------------------------------------------------------------------------
 
-// A snapshot is about 200KB (main RAM plus sideways RAM), so these cap a session's history near 35MB.
+// A snapshot is about 200KB (main RAM plus sideways RAM), 265KB with a tube's memory, so these cap a session's
+// history near 45MB.
 const MaxRecentSnapshots = 50;
 const MaxHistorySeconds = 120;
 
 const ReplayNote =
     "Replays the history the session keeps (see the history tool) from a snapshot before where it lands. " +
     "It cannot go back past something no replay can repeat: text from type_input, a load_basic, a " +
-    "disc or tape change, a write_memory with bank or shadow, a read_memory of a device register, or the " +
-    "cassette motor running; reset (hard) and restore_state start the history afresh. When it cannot go back, " +
+    "disc or tape change, a write to a disc, a write_memory with bank or shadow, a read_memory of a device " +
+    "register, or the cassette motor running, and an Econet machine keeps no history; reset (hard) and " +
+    "restore_state start the history afresh. When it cannot go back, " +
     "moved is false, refusal says why, and the machine is left as it was. A step back leaves breakpoint hits " +
     "cleared and the captured text as it was, counts no frames, and captures no sound writes.";
 
@@ -1390,7 +1397,7 @@ function historyReport(session) {
     if (oldestCycle !== null) {
         const back = session.elapsedCycles - oldestCycle;
         report.reaches_back_cycles = back;
-        report.reaches_back_seconds = back / findModel(session.modelName).cyclesPerSecond;
+        report.reaches_back_seconds = secondsOf(session, back);
     }
     return report;
 }
@@ -1433,7 +1440,7 @@ server.tool(
     "reverse_continue",
     "Run the machine backwards to where it would have stopped at the newest hit of any breakpoint set with " +
         "set_breakpoint before now: before the instruction for an execute breakpoint, after the instruction " +
-        "for a read or write. Every hit counts. Running on from there does not stop at the same breakpoint " +
+        "for a read or write. Running on from there does not stop at the same breakpoint " +
         `again. ${ReplayNote}`,
     { session_id: z.string().describe("Session ID from create_machine") },
     async ({ session_id }) => {
@@ -1458,7 +1465,6 @@ server.tool(
         const session = requireSession(session_id);
         const searchedFor = { address, addressHex: hexAddress(address) };
         const { refusal, write, searched, stoppedBy } = session.whoWrote(address);
-        const { cyclesPerSecond } = findModel(session.modelName);
         let result;
         if (refusal) {
             result = { ...searchedFor, found: false, refusal };
@@ -1475,7 +1481,7 @@ server.tool(
                 value: write.value,
                 cycle: write.cycle,
                 cycles_ago: ago,
-                seconds_ago: ago / cyclesPerSecond,
+                seconds_ago: secondsOf(session, ago),
             };
         }
         return { content: [{ type: "text", text: JSON.stringify(result) }] };
@@ -1487,8 +1493,10 @@ server.tool(
     "See, or set, how much history the session keeps for step_back, step_back_out, reverse_continue and " +
         `who_wrote. Each machine starts keeping what the jsbeeb page keeps: ${PageHistory.recent} recent ` +
         `snapshots, at most one a frame, and ${PageHistory.seconds} more, at most one a second, about 200KB ` +
-        "each; keeping them slows a run somewhat. Give recent or seconds to change " +
-        "it (both 0 turns history off), which forgets the history kept so far. Reports the sizes, how many " +
+        "each (265KB with a tube); keeping them slows a run somewhat. An Econet machine keeps none. Give recent " +
+        "or seconds to change it (both 0 turns history off; a lone ring of 1 holds only the newest snapshot, " +
+        "which leaves a step back nothing to start from), which forgets the history kept so far. Reports the " +
+        "sizes, how many " +
         "snapshots there are, and how far back the oldest reaches.",
     {
         session_id: z.string().describe("Session ID from create_machine"),
@@ -1750,13 +1758,14 @@ server.tool(
     },
     async ({ session_id, address, count }) => {
         const session = requireSession(session_id);
-        const dis = session._machine.processor.disassembler;
+        const cpu = session._machine.processor;
+        const dis = cpu.disassembler;
         const lines = [];
         let addr = address;
         for (let i = 0; i < count && addr <= 0xFFFF; i++) {
             const [text, nextAddr] = dis.disassemble(addr, true);
             const bytes = [];
-            for (let b = addr; b < nextAddr; b++) bytes.push(session._machine.readbyte(b));
+            for (let b = addr; b < nextAddr; b++) bytes.push(cpu.peekmem(b));
             const hex = bytes.map(b => b.toString(16).padStart(2, "0")).join(" ");
             lines.push(`${addr.toString(16).padStart(4, "0").toUpperCase()}  ${hex.padEnd(8)}  ${text}`);
             addr = nextAddr;
