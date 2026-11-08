@@ -1402,7 +1402,8 @@ const ReplayNote =
     "disc or tape change, a write to a disc, a write_memory with bank or shadow, a read_memory of a device " +
     "register, or the cassette motor running, and an Econet machine keeps no history; reset (hard) and " +
     "restore_state start the history afresh. While type_input is still typing (a breakpoint stopped it part way) " +
-    "it refuses: run on to finish the text, or release_all_keys to drop it. When it cannot go back, " +
+    "it refuses: run on to finish the text (after a restore_state, running on drops it instead), or " +
+    "release_all_keys to drop it. When it cannot go back, " +
     "moved is false, refusal says why, and the machine is left as it was. A step back leaves breakpoint hits " +
     "cleared and the captured text as it was, counts no frames, and captures no sound writes.";
 

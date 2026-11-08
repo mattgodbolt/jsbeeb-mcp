@@ -217,11 +217,11 @@ run starts with the instruction it stopped at.
 Every machine `create_machine` boots keeps a history as it runs, as the jsbeeb
 page does for its debugger: 3 recent snapshots, at most one a frame, and 30 more,
 at most one a second, each about 130KB on a Master to 200KB on a B (65KB more
-with a tube). An Econet machine
-keeps none, as no replay can repeat the network. `step_back`, `step_back_out`, `reverse_continue` and
-`who_wrote` replay from a snapshot before where they look, with what the session
-put in since (keys, text from `type_input`, BREAK, `write_memory`, a soft
-`reset`), and check that the replay ends where the machine is. Each reports `moved` (or `found` for
+with a tube). An Econet machine keeps none, as no replay can repeat the
+network. `step_back`, `step_back_out`, `reverse_continue` and `who_wrote` replay
+from a snapshot before where they look, with what the session put in since
+(keys, text from `type_input`, BREAK, `write_memory`, a soft `reset`), and check
+that the replay ends where the machine is. Each reports `moved` (or `found` for
 `who_wrote`) and, when it cannot go back, a `refusal` saying why, with the
 machine left as it was. `history` with `recent: 0, seconds: 0` turns it off;
 a hard `reset` and `restore_state` start it afresh.
@@ -333,8 +333,8 @@ A breakpoint that fires part way through `type_input` leaves the rest of the
 text still to be typed, and the typist keeps the keyboard until it is. Until
 then `key_down` and `key_up` refuse rather than dropping the key, and the
 step-back tools and `who_wrote` refuse too, as no replay can put back the text
-still to come; `reset` and
-`boot_disc` drop the pending text themselves. `keyboard_state` shows what is
+still to come. `reset` and `boot_disc` drop the pending text themselves, and
+`restore_state` drops it as soon as the machine runs on. `keyboard_state` shows what is
 held and whether typing is pending, and `release_all_keys` clears both.
 
 **Key names** are the machine's own, the same ones `keyboard_state` reports,
