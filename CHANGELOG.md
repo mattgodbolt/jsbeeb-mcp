@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.5.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v4.4.0...v4.5.0) (2026-11-08)
+
+
+### Features
+
+* step back, step back out, reverse continue and who wrote, from the history each machine now keeps ([#65](https://github.com/mattgodbolt/jsbeeb-mcp/issues/65)) ([4d669a6](https://github.com/mattgodbolt/jsbeeb-mcp/commit/4d669a6c878eab2318469bb8c8bf9485ee5e7ff3))
+
+
+### Bug Fixes
+
+* **deps:** bump @modelcontextprotocol/sdk ([#63](https://github.com/mattgodbolt/jsbeeb-mcp/issues/63)) ([05d94cd](https://github.com/mattgodbolt/jsbeeb-mcp/commit/05d94cd0e6e16c5fe64738cc1ffb561fa1f415cf))
+
 ## [4.4.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v4.3.0...v4.4.0) (2026-10-28)
 
 
