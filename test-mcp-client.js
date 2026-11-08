@@ -1079,6 +1079,13 @@ async function main() {
         "step_back refuses to go back past a write to a chosen bank, and stays put",
         !pastBank.moved && /paged in/.test(pastBank.refusal) && afterRefusal.elapsed_cycles === beforeRefusal.elapsed_cycles,
     );
+    // Enough frames for a snapshot after the write, so the search stops there rather than refusing outright.
+    await tool("run_frames", { count: 5 });
+    const stoppedAtBank = await tool("who_wrote", { address: 0x1b00 });
+    ok(
+        "who_wrote says what it could not search back past",
+        !stoppedAtBank.found && /cannot go back past a write to memory paged in/.test(stoppedAtBank.why),
+    );
     const both = await client.callTool({ name: "step_back", arguments: { session_id: replaySid, over: true, to_cycle: 0 } });
     ok("step_back refuses over and to_cycle together", both.isError === true);
 

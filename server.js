@@ -1401,7 +1401,8 @@ const ReplayNote =
     "It replays text from type_input, but cannot go back past something no replay can repeat: a load_basic, a " +
     "disc or tape change, a write to a disc, a write_memory with bank or shadow, a read_memory of a device " +
     "register, or the cassette motor running, and an Econet machine keeps no history; reset (hard) and " +
-    "restore_state start the history afresh. When it cannot go back, " +
+    "restore_state start the history afresh. While type_input is still typing (a breakpoint stopped it part way) " +
+    "it refuses: run on to finish the text, or release_all_keys to drop it. When it cannot go back, " +
     "moved is false, refusal says why, and the machine is left as it was. A step back leaves breakpoint hits " +
     "cleared and the captured text as it was, counts no frames, and captures no sound writes.";
 

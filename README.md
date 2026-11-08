@@ -331,7 +331,9 @@ matrix key that moved, which also measures what a name maps to.
 
 A breakpoint that fires part way through `type_input` leaves the rest of the
 text still to be typed, and the typist keeps the keyboard until it is. Until
-then `key_down` and `key_up` refuse rather than dropping the key; `reset` and
+then `key_down` and `key_up` refuse rather than dropping the key, and the
+step-back tools and `who_wrote` refuse too, as no replay can put back the text
+still to come; `reset` and
 `boot_disc` drop the pending text themselves. `keyboard_state` shows what is
 held and whether typing is pending, and `release_all_keys` clears both.
 
