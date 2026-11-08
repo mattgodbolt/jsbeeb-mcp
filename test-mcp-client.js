@@ -141,6 +141,9 @@ async function main() {
     ok("has run_until_address", toolNames.includes("run_until_address"));
     ok("has start_coverage", toolNames.includes("start_coverage"));
     ok("has stop_coverage", toolNames.includes("stop_coverage"));
+    for (const name of ["step_back", "step_back_out", "reverse_continue", "who_wrote", "history"]) {
+        ok(`has ${name}`, toolNames.includes(name));
+    }
 
     // Every model create_machine offers must be one jsbeeb actually knows, or the
     // client is invited to pick a name that fails deep inside MachineSession.
@@ -853,6 +856,13 @@ async function main() {
     await callTool(client, "type_input", { session_id: econetSid, text: "PRINT ?&FE18" });
     const station = JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id: econetSid })));
     ok("the station number reads back from the Econet links", /^\s+42$/m.test(station.screenText));
+    const econetHistory = JSON.parse(textContent(await callTool(client, "history", { session_id: econetSid })));
+    const econetKeep = await client.callTool({ name: "history", arguments: { session_id: econetSid, recent: 3 } });
+    const econetOff = await client.callTool({ name: "history", arguments: { session_id: econetSid, recent: 0, seconds: 0 } });
+    ok(
+        "an Econet machine keeps no history, refuses to start one, and takes none",
+        econetHistory.snapshots === 0 && econetKeep.isError === true && !econetOff.isError,
+    );
     await callTool(client, "destroy_machine", { session_id: econetSid });
     const stationAlone = await client.callTool({ name: "create_machine", arguments: { station_id: 42 } });
     ok("a station number without Econet is refused", stationAlone.isError === true);
@@ -987,6 +997,120 @@ async function main() {
     ok("run_disc returns output", !!rdParsed.output);
     const rdImg = imageContent(runDiscResult);
     ok("run_disc returns screenshot", !!rdImg);
+
+    // --- Replay debugging ---
+    console.log("\n--- replay debugging ---");
+    const replaySid = JSON.parse(textContent(await callTool(client, "create_machine", {}))).session_id;
+    const call = (name, args) => callTool(client, name, { session_id: replaySid, ...args });
+    const tool = async (name, args) => JSON.parse(textContent(await call(name, args)));
+    const keptAtStart = await tool("history", {});
+    console.log("history:", JSON.stringify(keptAtStart));
+    ok(
+        "history is kept from the start, as the page keeps it, and says how far back it reaches",
+        keptAtStart.recent === 3 && keptAtStart.seconds === 30 && keptAtStart.snapshots > 0 && keptAtStart.reaches_back_cycles > 0,
+    );
+
+    // SEI and LDX #0, then for ever JSR to STX &1900 and RTS, and INX.
+    const loopAt = 0x2000, callAt = 0x2003, afterCall = 0x2006, jmpAt = 0x2007, subAt = 0x2010, rtsAt = 0x2013;
+    const counter = 0x1900;
+    await call("write_memory", { address: loopAt, bytes: [0x78, 0xa2, 0x00, 0x20, 0x10, 0x20, 0xe8, 0x4c, 0x03, 0x20] });
+    await call("write_memory", { address: subAt, bytes: [0x8e, counter & 0xff, counter >> 8, 0x60] });
+    const startLoop = async () => {
+        await call("type_input", { text: `CALL &${loopAt.toString(16)}` });
+        while ((await tool("keyboard_state", {})).typing_pending) await tool("run_for_cycles", { cycles: 40000 });
+        await tool("run_frames", { count: 5 });
+    };
+    const beforeTyping = (await tool("read_registers", {})).elapsed_cycles;
+    await startLoop();
+    const acrossTyping = await tool("step_back", { to_cycle: beforeTyping });
+    ok(
+        "step_back replays across the text type_input typed",
+        acrossTyping.moved && acrossTyping.registers.elapsed_cycles === beforeTyping,
+    );
+    await startLoop();
+
+    await tool("run_until_address", { address: afterCall, timeout_secs: 1 });
+    const over = await tool("step_back", { over: true });
+    ok("step_back over lands on the call it returned from", over.moved && over.registers.pc === callAt);
+    const one = await tool("step_back", {});
+    ok("step_back goes back one instruction", one.moved && one.registers.pc === jmpAt);
+    await tool("run_until_address", { address: rtsAt, timeout_secs: 1 });
+    const out = await tool("step_back_out", {});
+    ok("step_back_out lands on the JSR that entered the routine", out.moved && out.registers.pc === callAt);
+
+    await tool("set_breakpoint", { address: afterCall });
+    const stop = await tool("run_for_cycles", { cycles: 40000 });
+    const reversed = await tool("reverse_continue", {});
+    ok(
+        "reverse_continue lands on the breakpoint's previous hit",
+        reversed.moved && reversed.registers.pc === afterCall && reversed.registers.x === ((stop.registers.x + 0xff) & 0xff),
+    );
+    const onwards = await tool("run_for_cycles", { cycles: 40000 });
+    ok("and runs on from there to the next hit", onwards.registers.pc === afterCall && onwards.registers.x === stop.registers.x);
+    await tool("step_back", { to_cycle: reversed.registers.elapsed_cycles });
+    await call("clear_breakpoint", { id: 0 });
+
+    const searchedAt = (await tool("read_registers", {})).elapsed_cycles;
+    const wrote = await tool("who_wrote", { address: counter });
+    console.log("who_wrote:", JSON.stringify(wrote));
+    ok(
+        "who_wrote names the instruction and the value, and how long ago",
+        wrote.found && wrote.pc === subAt && wrote.value === reversed.registers.x && wrote.cycles_ago === searchedAt - wrote.cycle,
+    );
+    const toWrite = await tool("step_back", { to_cycle: wrote.cycle });
+    ok("step_back to_cycle goes to the write", toWrite.moved && toWrite.registers.pc === subAt && toWrite.registers.elapsed_cycles === wrote.cycle);
+    const untouched = await tool("who_wrote", { address: 0x1b00 });
+    ok(
+        "who_wrote says how far back it looked when nothing wrote the byte",
+        !untouched.found && untouched.searched_cycles > 0 && /as far back as the history goes/.test(untouched.why),
+    );
+    const rom = await tool("who_wrote", { address: 0xc000 });
+    ok("who_wrote refuses ROM, which no write changes", !rom.found && /ROM/.test(rom.refusal));
+    await call("write_memory", { address: 0x1a00, bytes: [0x55] });
+    await tool("run_frames", { count: 2 });
+    const poked = await tool("who_wrote", { address: 0x1a00 });
+    ok("who_wrote finds a write_memory, with no pc", poked.found && poked.pc === null && poked.value === 0x55);
+
+    await call("write_memory", { address: 0x1a00, bytes: [0x66], bank: 0 });
+    const beforeRefusal = await tool("read_registers", {});
+    const pastBank = await tool("step_back", {});
+    const afterRefusal = await tool("read_registers", {});
+    ok(
+        "step_back refuses to go back past a write to a chosen bank, and stays put",
+        !pastBank.moved && /paged in/.test(pastBank.refusal) && afterRefusal.elapsed_cycles === beforeRefusal.elapsed_cycles,
+    );
+    // Enough frames for a snapshot after the write, so the search stops there rather than refusing outright.
+    await tool("run_frames", { count: 5 });
+    const stoppedAtBank = await tool("who_wrote", { address: 0x1b00 });
+    ok(
+        "who_wrote says what it could not search back past",
+        !stoppedAtBank.found && /cannot go back past a write to memory paged in/.test(stoppedAtBank.why),
+    );
+    const both = await client.callTool({ name: "step_back", arguments: { session_id: replaySid, over: true, to_cycle: 0 } });
+    ok("step_back refuses over and to_cycle together", both.isError === true);
+
+    // Reading the System VIA's timer 1 low byte clears the timer's interrupt flag; peeking at it does not.
+    const sysViaT1Low = 0xfe44, sysViaIfr = 0xfe4d, timer1Flag = 0x40;
+    const ifr = async () => (await tool("read_memory", { address: sysViaIfr, length: 1 })).bytes[0];
+    await tool("run_frames", { count: 2 });
+    const flagged = (await ifr()) & timer1Flag;
+    await callTool(client, "disassemble", { session_id: replaySid, address: sysViaT1Low, count: 1 });
+    ok("disassemble at a device register leaves the device as it was", flagged !== 0 && ((await ifr()) & timer1Flag) === flagged);
+
+    const longRunCycles = 2000000;
+    const startedAt = (await tool("read_registers", {})).elapsed_cycles;
+    const longRun = call("run_for_cycles", { cycles: longRunCycles });
+    const meanwhile = await tool("read_registers", {});
+    await longRun;
+    ok("a session's calls wait for the one before to finish", meanwhile.elapsed_cycles >= startedAt + longRunCycles);
+
+    const off = await tool("history", { recent: 0, seconds: 0 });
+    ok("history turns off", off.snapshots === 0 && off.reaches_back_cycles === undefined);
+    const noHistory = await tool("step_back_out", {});
+    ok("with no history, a step back says so", !noHistory.moved && /no history/.test(noHistory.refusal));
+    const backOn = await tool("history", { seconds: 5 });
+    ok("history keeps the sizes it is not given", backOn.recent === 0 && backOn.seconds === 5);
+    await callTool(client, "destroy_machine", { session_id: replaySid });
 
     const stdoutLabel = transportErrors.length ? `first: ${transportErrors[0]}` : "none";
     ok(`stdout carries only JSON-RPC (${stdoutLabel})`, transportErrors.length === 0);

@@ -30,6 +30,7 @@ import { MachineSession, allModels, findModel } from "jsbeeb";
 import { BBC } from "jsbeeb/src/keymap.js";
 import { ATOM } from "jsbeeb/src/keymap-atom.js";
 import { DefaultStationId, FileServerStationId } from "jsbeeb/src/econet.js";
+import { PageHistory } from "jsbeeb/src/replay.js";
 import { AssertionError } from "node:assert";
 import { writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -120,6 +121,10 @@ const ModelDescription =
 
 function secondsOfCycles(modelName, seconds) {
     return seconds * findModel(modelName).cyclesPerSecond;
+}
+
+function cyclesToSeconds(session, cycles) {
+    return cycles / findModel(session.modelName).cyclesPerSecond;
 }
 
 /**
@@ -433,11 +438,33 @@ const server = new McpServer({
     version: "0.1.0",
 });
 
+// A client may send a call before the last has answered. One session's calls run one at a time, as a step back or
+// a reset landing between the slices of a run would leave that run going on from a machine it never reached.
+const sessionQueues = new Map(); // sessionId → its latest call, settled
+
+/** Registers a tool as server.tool does, running the calls that name the same session_id one after another. */
+function tool(name, description, schema, handler) {
+    server.tool(name, description, schema, (args, extra) => {
+        const { session_id } = args;
+        if (!session_id) return handler(args, extra);
+        const call = (sessionQueues.get(session_id) ?? Promise.resolve()).then(() => handler(args, extra));
+        const settled = call.then(
+            () => {},
+            () => {},
+        );
+        sessionQueues.set(session_id, settled);
+        settled.then(() => {
+            if (sessionQueues.get(session_id) === settled) sessionQueues.delete(session_id);
+        });
+        return call;
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Tool: create_machine
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "create_machine",
     "Boot one of the machines jsbeeb emulates and return a session ID for use with all other tools. " +
         "The machine runs until the BASIC prompt before this call returns.",
@@ -515,6 +542,8 @@ server.tool(
             video_nula,
         });
         await session.initialise();
+        // No replay can repeat a network, so an Econet machine keeps no history to pay for.
+        if (!econet) session.keepHistory(PageHistory);
         const bootOutput = await session.boot(boot_timeout_secs);
         const id = newSessionId();
         sessions.set(id, session);
@@ -537,7 +566,7 @@ server.tool(
 // Tool: destroy_machine
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "destroy_machine",
     "Destroy a BBC Micro session and free its resources.",
     { session_id: z.string().describe("Session ID from create_machine") },
@@ -556,7 +585,7 @@ server.tool(
 // Tool: load_disc
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "load_disc",
     "Put a disc image in a drive, from a file on this machine (image_path) or from the archives or a " +
         "URL (image_ref). Zips are opened and the disc inside used. " +
@@ -578,7 +607,7 @@ server.tool(
 // Tool: load_tape
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "load_tape",
     "Put a tape (.uef, or a zip holding one) in the cassette recorder and press PLAY. The Atom's tape " +
         "runs at once; on a BBC or Master it runs when the OS starts the motor, so follow with type_input " +
@@ -604,7 +633,7 @@ server.tool(
 // Tool: load_basic
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "load_basic",
     "Tokenise BBC BASIC source code and load it into the emulator's PAGE memory, " +
         "exactly as if you had typed it in and saved it. Does NOT run the program.",
@@ -623,7 +652,7 @@ server.tool(
 // Tool: type_input
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "type_input",
     "Type text at the current keyboard prompt (simulates key presses). " +
         "RETURN is pressed once after the text, unless the text already ends in a newline. " +
@@ -646,7 +675,7 @@ server.tool(
 // Tool: run_until_prompt
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "run_until_prompt",
     "Run the emulator until it returns to a keyboard input prompt (e.g. the BASIC prompt after RUN completes). " +
         "Returns all text output that was written to the screen since the last call.",
@@ -679,7 +708,7 @@ server.tool(
 // Tool: screenshot
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "screenshot",
     "Capture the last fully-painted BBC Micro frame as a PNG image. " +
         "Returns a base64-encoded PNG of the full 1024×625 emulated display, plus the frame counter " +
@@ -715,7 +744,7 @@ server.tool(
 // Tool: read_memory
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "read_memory",
     "Read bytes from the BBC Micro's memory map. Returns an array of decimal byte values plus a hex dump, " +
         "and paging: romsel as last written, bank (the sideways bank it pages in at &8000–&BFFF) and on a " +
@@ -752,7 +781,7 @@ server.tool(
 // Tool: write_memory
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "write_memory",
     "Write bytes into the BBC Micro's memory. " +
         "Useful for poking machine code, modifying variables, or patching running programs. " +
@@ -781,7 +810,7 @@ server.tool(
 // Tool: read_registers
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "read_registers",
     "Read the current 6502 CPU register state (PC, A, X, Y, stack pointer, processor status), " +
         "along with the frame and cycle counters.",
@@ -796,7 +825,7 @@ server.tool(
 // Tool: run_for_cycles
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "run_for_cycles",
     "Run the emulator for a number of CPU cycles (2MHz on a BBC, 1MHz on an Atom): that many to within " +
         "the instruction that finishes it, unless a breakpoint stops it first. " +
@@ -840,7 +869,7 @@ server.tool(
 // Tool: run_frames
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "run_frames",
     "Run the emulator until it has painted another `count` frames, stopping on the paint itself. " +
         "Use this rather than run_for_cycles for anything frame-oriented: capturing consecutive " +
@@ -885,7 +914,7 @@ server.tool(
 // Tool: run_until_address
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "run_until_address",
     "Run until the PC reaches an address, stopping before the instruction there runs, or until " +
         "timeout_secs of emulated time pass. Like a one-off execute breakpoint: give bank to stop only while " +
@@ -954,7 +983,7 @@ server.tool(
 // Tool: key_down
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "key_down",
     "Press and hold a key on the keyboard; use key_up to release it later. Name the key one way: " +
         "by the machine's own name for it, or by BBC internal key number, INKEY number, or col and row, " +
@@ -976,7 +1005,7 @@ server.tool(
 // Tool: key_up
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "key_up",
     "Release a held key, named any of the ways key_down takes. Reports the matrix keys that came up.",
     {
@@ -994,7 +1023,7 @@ server.tool(
 // Tool: keyboard_state
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "keyboard_state",
     "Report the keyboard as the machine sees it: every key held, with its matrix column and row, its " +
         "name, and on a BBC its internal key number (as OSBYTE 121 and a keyboard scan use) and negative " +
@@ -1011,7 +1040,7 @@ server.tool(
 // Tool: release_all_keys
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "release_all_keys",
     "Release every held key and drop any typing still pending from an interrupted type_input, " +
         "so the keyboard is in a known state. Reports what was released.",
@@ -1029,7 +1058,7 @@ server.tool(
 // Tool: flush_keyboard_buffer
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "flush_keyboard_buffer",
     "Empty the OS's keyboard buffer, throwing away keys pressed but not yet read, so a program " +
         "that is busy when they go down does not read them later. Unlike OSBYTE 21 it leaves a " +
@@ -1046,7 +1075,7 @@ server.tool(
 // Tool: reset
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "reset",
     "Reset the BBC Micro. With autoboot=true, holds SHIFT during reset to trigger " +
         "a disc autoboot (SHIFT+BREAK) and reports shift_held_at_reset. The boot sequence is initiated " +
@@ -1078,7 +1107,7 @@ server.tool(
 // Tool: boot_disc
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "boot_disc",
     "Load a disc image, from a file here or from the archives or a URL as load_disc takes them, " +
         "and autoboot it (SHIFT+BREAK). Equivalent to: load_disc → key_down SHIFT → reset → key_up SHIFT. " +
@@ -1103,7 +1132,7 @@ server.tool(
 // Tool: run_disc  (convenience: one-shot, no session management needed)
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "run_disc",
     "One-shot convenience tool: boot a BBC Micro, load a disc image, autoboot it " +
         "(SHIFT+BREAK), return all text output and optionally a screenshot, then destroy the session. " +
@@ -1148,7 +1177,7 @@ server.tool(
 // Tool: run_basic  (convenience: one-shot, no session management needed)
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "run_basic",
     "One-shot convenience tool: boot a BBC Micro, load a BASIC program, run it, " +
         "return all text output and a screenshot, then destroy the session. " +
@@ -1191,7 +1220,7 @@ server.tool(
 // Sound chip tools
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "read_sound_state",
     "Read the SN76489 sound chip's current register state: tone periods for " +
         "channels 0–2, noise register, volume/attenuation for all 4 channels, " +
@@ -1221,7 +1250,7 @@ server.tool(
     },
 );
 
-server.tool(
+tool(
     "start_sound_capture",
     "Start capturing all SN76489 sound chip writes. Every byte written to the " +
         "chip is logged with its cycle timestamp. Use stop_sound_capture to " +
@@ -1240,7 +1269,7 @@ server.tool(
     },
 );
 
-server.tool(
+tool(
     "stop_sound_capture",
     "Stop capturing SN76489 writes and return the log. Each entry has a cycle " +
         "timestamp and the byte value written. The values are decoded into " +
@@ -1299,7 +1328,7 @@ server.tool(
     },
 );
 
-server.tool(
+tool(
     "set_breakpoint",
     "Set a persistent breakpoint. The breakpoint stays active across multiple " +
         "run_for_cycles calls until removed with clear_breakpoint. When a breakpoint " +
@@ -1340,7 +1369,7 @@ server.tool(
     },
 );
 
-server.tool(
+tool(
     "clear_breakpoint",
     "Remove a previously set breakpoint by its ID, or pass id=0 to clear all breakpoints.",
     {
@@ -1359,10 +1388,175 @@ server.tool(
 );
 
 // ---------------------------------------------------------------------------
+// Replay debugging
+// ---------------------------------------------------------------------------
+
+// A snapshot is about 200KB (main RAM plus sideways RAM), 265KB with a tube's memory, so these cap a session's
+// history near 45MB.
+const MaxRecentSnapshots = 50;
+const MaxHistorySeconds = 120;
+
+const ReplayNote =
+    "Replays the history the session keeps (see the history tool) from a snapshot before where it lands. " +
+    "It replays text from type_input, but cannot go back past something no replay can repeat: a load_basic, a " +
+    "disc or tape change, a write to a disc, a write_memory with bank or shadow, a read_memory of a device " +
+    "register, or the cassette motor running, and an Econet machine keeps no history; reset (hard) and " +
+    "restore_state start the history afresh. While type_input is still typing (a breakpoint stopped it part way) " +
+    "it refuses: run on to finish the text (after a restore_state, running on drops it instead), or " +
+    "release_all_keys to drop it. When it cannot go back, " +
+    "moved is false, refusal says why, and the machine is left as it was. A step back leaves breakpoint hits " +
+    "cleared and the captured text as it was, counts no frames, and captures no sound writes.";
+
+/** What a step back reports: where the machine landed, or why it stayed put. */
+function stepBackResult(session, refusal) {
+    if (refusal) return { content: [{ type: "text", text: JSON.stringify({ moved: false, refusal }) }] };
+    const registers = registersWithCounters(session);
+    const result = { moved: true, pcHex: hexAddress(registers.pc), registers };
+    return { content: [{ type: "text", text: JSON.stringify(result) }] };
+}
+
+function historyReport(session) {
+    const { recent, seconds, snapshots, oldestCycle } = session.historyState();
+    const report = { recent, seconds, snapshots };
+    if (oldestCycle !== null) {
+        const back = session.elapsedCycles - oldestCycle;
+        report.reaches_back_cycles = back;
+        report.reaches_back_seconds = cyclesToSeconds(session, back);
+    }
+    return report;
+}
+
+tool(
+    "step_back",
+    "Step the machine back one instruction, or with over back over the call the last instruction returned " +
+        "from, or with to_cycle back to that cycle (an instruction's start, as who_wrote reports one). " +
+        `${ReplayNote} Reports moved, and where it landed as read_registers does.`,
+    {
+        session_id: z.string().describe("Session ID from create_machine"),
+        over: z.boolean().default(false).describe("Step back over the call the last instruction returned from"),
+        to_cycle: z
+            .number()
+            .int()
+            .min(0)
+            .optional()
+            .describe("Step back to this elapsed cycle instead, as who_wrote gives a write's cycle"),
+    },
+    async ({ session_id, over, to_cycle }) => {
+        const session = requireSession(session_id);
+        if (over && to_cycle !== undefined) throw new Error("Give over or to_cycle, not both");
+        const refusal = to_cycle === undefined ? session.stepBack(over) : session.stepBackTo(to_cycle);
+        return stepBackResult(session, refusal);
+    },
+);
+
+tool(
+    "step_back_out",
+    "Step the machine back to the JSR, BRK or interrupt that entered the routine it is in, the reverse of " +
+        `running to its RTS or RTI. ${ReplayNote}`,
+    { session_id: z.string().describe("Session ID from create_machine") },
+    async ({ session_id }) => {
+        const session = requireSession(session_id);
+        return stepBackResult(session, session.stepBackOut());
+    },
+);
+
+tool(
+    "reverse_continue",
+    "Run the machine backwards to where it would have stopped at the newest hit of any breakpoint set with " +
+        "set_breakpoint before now: before the instruction for an execute breakpoint, after the instruction " +
+        "for a read or write. Running on from there does not stop at the same breakpoint " +
+        `again. ${ReplayNote}`,
+    { session_id: z.string().describe("Session ID from create_machine") },
+    async ({ session_id }) => {
+        const session = requireSession(session_id);
+        return stepBackResult(session, session.reverseContinue());
+    },
+);
+
+tool(
+    "who_wrote",
+    "Find the last write to a byte, as the machine pages it now, by replaying the history the session keeps, " +
+        "newest first, and leaving the machine as it was. found says whether a write was found. A write reports " +
+        "pc and pcHex, the instruction that wrote it (null when an input such as write_memory did), value, the " +
+        "cycle it started at (step_back with to_cycle goes there), and cycles_ago and seconds_ago. With nothing " +
+        "found, searched_cycles and why say how far back it looked and why it went no further; refusal says why " +
+        "it could not search at all (no history, ROM, or something it cannot replay since the newest snapshot).",
+    {
+        session_id: z.string().describe("Session ID from create_machine"),
+        address: z.number().int().min(0).max(0xffff).describe("Address of the byte (0–65535)"),
+    },
+    async ({ session_id, address }) => {
+        const session = requireSession(session_id);
+        const searchedFor = { address, addressHex: hexAddress(address) };
+        const { refusal, write, searched, stoppedBy } = session.whoWrote(address);
+        let result;
+        if (refusal) {
+            result = { ...searchedFor, found: false, refusal };
+        } else if (!write) {
+            const why = stoppedBy ? `cannot go back past ${stoppedBy}` : "that is as far back as the history goes";
+            result = { ...searchedFor, found: false, searched_cycles: searched, why };
+        } else {
+            const ago = session.elapsedCycles - write.cycle;
+            result = {
+                ...searchedFor,
+                found: true,
+                pc: write.pc,
+                pcHex: write.pc === null ? null : hexAddress(write.pc),
+                value: write.value,
+                cycle: write.cycle,
+                cycles_ago: ago,
+                seconds_ago: cyclesToSeconds(session, ago),
+            };
+        }
+        return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    },
+);
+
+tool(
+    "history",
+    "See, or set, how much history the session keeps for step_back, step_back_out, reverse_continue and " +
+        `who_wrote. Each machine starts keeping what the jsbeeb page keeps: ${PageHistory.recent} recent ` +
+        `snapshots, at most one a frame, and ${PageHistory.seconds} more, at most one a second, each about ` +
+        "130KB on a Master to 200KB on a B (65KB more with a tube); keeping them slows a run somewhat. An " +
+        "Econet machine keeps none, and refuses to start. Give recent or seconds to change it (both 0 turns " +
+        "history off; a lone ring of 1 holds only the newest snapshot, which leaves a step back nothing to " +
+        "start from), which forgets the history kept so far. Reports the sizes, how many snapshots there are, " +
+        "and how far back the oldest reaches.",
+    {
+        session_id: z.string().describe("Session ID from create_machine"),
+        recent: z
+            .number()
+            .int()
+            .min(0)
+            .max(MaxRecentSnapshots)
+            .optional()
+            .describe("Recent snapshots to keep, at most one a frame"),
+        seconds: z
+            .number()
+            .int()
+            .min(0)
+            .max(MaxHistorySeconds)
+            .optional()
+            .describe("Snapshots to keep further back, at most one a second"),
+    },
+    async ({ session_id, recent, seconds }) => {
+        const session = requireSession(session_id);
+        if (recent !== undefined || seconds !== undefined) {
+            if (fittings.get(session).econet && (recent || seconds)) {
+                throw new Error("An Econet machine keeps no history, as no replay can repeat the network");
+            }
+            const kept = session.historyState();
+            session.keepHistory({ recent: recent ?? kept.recent, seconds: seconds ?? kept.seconds });
+        }
+        return { content: [{ type: "text", text: JSON.stringify(historyReport(session)) }] };
+    },
+);
+
+// ---------------------------------------------------------------------------
 // Code coverage tools
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "start_coverage",
     "Start recording which instructions the host CPU executes, and how often, as the machine runs under " +
         "any tool. Addresses in &8000–&BFFF are kept apart by the sideways bank paged in (and on a Master, " +
@@ -1381,7 +1575,7 @@ server.tool(
     },
 );
 
-server.tool(
+tool(
     "stop_coverage",
     "Stop recording coverage and summarise it: instructions_executed, unique_addresses, the stretches of " +
         "code executed (ranges, each from the first to the last instruction address run in it, with bank " +
@@ -1406,7 +1600,7 @@ server.tool(
 // State snapshot tools
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "save_state",
     "Snapshot the whole machine (CPU, RAM, sideways RAM, video, sound chip, " +
         "discs, tube) and keep it server-side under a state ID. Econet's file server is not in it, " +
@@ -1451,7 +1645,7 @@ server.tool(
     },
 );
 
-server.tool(
+tool(
     "restore_state",
     "Put a session back to a state saved by save_state. Memory, registers and " +
         "the cycle count rewind; breakpoints and the frame counter carry on. A state " +
@@ -1505,7 +1699,7 @@ server.tool(
     },
 );
 
-server.tool(
+tool(
     "list_states",
     "List the states held by save_state, newest first.",
     {
@@ -1527,7 +1721,7 @@ server.tool(
     },
 );
 
-server.tool(
+tool(
     "delete_state",
     "Discard a saved state and free the memory it holds. States outlive the " +
         "session they came from, so they are only freed when deleted.",
@@ -1544,7 +1738,7 @@ server.tool(
 // Tool: save_memory
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "save_memory",
     "Save a range of the BBC Micro's memory to a file on the host filesystem. " +
         "Much faster than multiple read_memory calls for large dumps. Reports paging as read_memory does, " +
@@ -1580,7 +1774,7 @@ server.tool(
 // Tool: disassemble
 // ---------------------------------------------------------------------------
 
-server.tool(
+tool(
     "disassemble",
     "Disassemble 6502 machine code from the BBC Micro's memory. " +
         "Returns assembly listing with addresses, hex bytes, and mnemonics.",
@@ -1591,13 +1785,14 @@ server.tool(
     },
     async ({ session_id, address, count }) => {
         const session = requireSession(session_id);
-        const dis = session._machine.processor.disassembler;
+        const cpu = session._machine.processor;
+        const dis = cpu.disassembler;
         const lines = [];
         let addr = address;
         for (let i = 0; i < count && addr <= 0xFFFF; i++) {
             const [text, nextAddr] = dis.disassemble(addr, true);
             const bytes = [];
-            for (let b = addr; b < nextAddr; b++) bytes.push(session._machine.readbyte(b));
+            for (let b = addr; b < nextAddr; b++) bytes.push(cpu.peekmem(b));
             const hex = bytes.map(b => b.toString(16).padStart(2, "0")).join(" ");
             lines.push(`${addr.toString(16).padStart(4, "0").toUpperCase()}  ${hex.padEnd(8)}  ${text}`);
             addr = nextAddr;

@@ -143,7 +143,9 @@ repo (`@~latest` takes the tag of its latest release), or an `http(s):` or
 
 ### Session-based tools
 
-For multi-step interaction (debugging, iterative development):
+For multi-step interaction (debugging, iterative development), these tools
+work on a session `create_machine` returns. Calls that name the same
+`session_id` run one at a time, in the order they arrive.
 
 | Tool               | Description                                                    |
 | ------------------ | -------------------------------------------------------------- |
@@ -159,6 +161,11 @@ For multi-step interaction (debugging, iterative development):
 | `run_for_cycles`   | Run N CPU cycles, or up to a breakpoint; reports `cycles_run`, the count actually run (drains output by default — use `clear: false` to peek without consuming) |
 | `run_frames`       | Advance N painted frames — use this, not `run_for_cycles`, to step the display |
 | `run_until_address` | Run until the PC reaches an address (in one sideways `bank` if given), or `timeout_secs` pass; reports `reached`, `stopped_reason` and the registers |
+| `step_back`        | Step back one instruction, back `over` the call just returned from, or back `to_cycle` (see [Stepping back](#stepping-back)) |
+| `step_back_out`    | Step back to the JSR, BRK or interrupt that entered the current routine |
+| `reverse_continue` | Run backwards to the newest hit of a breakpoint set with `set_breakpoint` |
+| `who_wrote`        | Find the last write to a byte: the instruction, the value, the cycle and how long ago |
+| `history`          | See or set how much history the machine keeps for stepping back |
 | `start_coverage`   | Start counting every instruction address the host CPU executes |
 | `stop_coverage`    | Stop counting and summarise: stretches of code run, by bank, and the hottest addresses |
 | `load_disc`        | Put a disc in drive 0 or 1, from a file, an archive or a URL   |
@@ -204,6 +211,35 @@ itself does not change that: the response is `reached: true` and `address`,
 with the `breakpoint` attached. A hit an earlier call left unreported comes back
 first as `pending_breakpoint`, with `cycles_run` 0 and nothing run. The next
 run starts with the instruction it stopped at.
+
+### Stepping back
+
+Every machine `create_machine` boots keeps a history as it runs, as the jsbeeb
+page does for its debugger: 3 recent snapshots, at most one a frame, and 30 more,
+at most one a second, each about 130KB on a Master to 200KB on a B (65KB more
+with a tube). An Econet machine keeps none, as no replay can repeat the
+network. `step_back`, `step_back_out`, `reverse_continue` and `who_wrote` replay
+from a snapshot before where they look, with what the session put in since
+(keys, text from `type_input`, BREAK, `write_memory`, a soft `reset`), and check
+that the replay ends where the machine is. Each reports `moved` (or `found` for
+`who_wrote`) and, when it cannot go back, a `refusal` saying why, with the
+machine left as it was. `history` with `recent: 0, seconds: 0` turns it off;
+a hard `reset` and `restore_state` start it afresh.
+
+A replay cannot repeat, and so a step back cannot cross:
+
+- a `load_basic`, which puts the program straight into memory
+- a disc or tape change, a write to a disc, or the cassette motor running
+- a `write_memory` with `bank` or `shadow`, or a `read_memory` of a device
+  register, which can change the device
+
+`reverse_continue` stops where a forward run would have: before the instruction
+for an execute breakpoint, after it for a read or write. `who_wrote` looks for
+the byte as the machine pages it now, newest stretch first; its `cycle` is where
+the writing instruction started, so `step_back` with `to_cycle` goes there. A
+write by `write_memory` reports `pc: null`. Keeping history slows a run
+somewhat, whatever its sizes; `history` with none buys that back. Coverage
+counts what a step back undoes, and counts it again as the machine runs on.
 
 ### Code coverage
 
@@ -295,8 +331,10 @@ matrix key that moved, which also measures what a name maps to.
 
 A breakpoint that fires part way through `type_input` leaves the rest of the
 text still to be typed, and the typist keeps the keyboard until it is. Until
-then `key_down` and `key_up` refuse rather than dropping the key; `reset` and
-`boot_disc` drop the pending text themselves. `keyboard_state` shows what is
+then `key_down` and `key_up` refuse rather than dropping the key, and the
+step-back tools and `who_wrote` refuse too, as no replay can put back the text
+still to come. `reset` and `boot_disc` drop the pending text themselves, and
+`restore_state` drops it as soon as the machine runs on. `keyboard_state` shows what is
 held and whether typing is pending, and `release_all_keys` clears both.
 
 **Key names** are the machine's own, the same ones `keyboard_state` reports,
