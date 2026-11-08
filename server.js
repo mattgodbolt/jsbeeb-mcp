@@ -1398,7 +1398,7 @@ const MaxHistorySeconds = 120;
 
 const ReplayNote =
     "Replays the history the session keeps (see the history tool) from a snapshot before where it lands. " +
-    "It cannot go back past something no replay can repeat: text from type_input, a load_basic, a " +
+    "It replays text from type_input, but cannot go back past something no replay can repeat: a load_basic, a " +
     "disc or tape change, a write to a disc, a write_memory with bank or shadow, a read_memory of a device " +
     "register, or the cassette motor running, and an Econet machine keeps no history; reset (hard) and " +
     "restore_state start the history afresh. When it cannot go back, " +

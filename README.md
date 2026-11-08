@@ -220,16 +220,15 @@ at most one a second, each about 130KB on a Master to 200KB on a B (65KB more
 with a tube). An Econet machine
 keeps none, as no replay can repeat the network. `step_back`, `step_back_out`, `reverse_continue` and
 `who_wrote` replay from a snapshot before where they look, with what the session
-put in since (keys, BREAK, `write_memory`, a soft `reset`), and check that the
-replay ends where the machine is. Each reports `moved` (or `found` for
+put in since (keys, text from `type_input`, BREAK, `write_memory`, a soft
+`reset`), and check that the replay ends where the machine is. Each reports `moved` (or `found` for
 `who_wrote`) and, when it cannot go back, a `refusal` saying why, with the
 machine left as it was. `history` with `recent: 0, seconds: 0` turns it off;
 a hard `reset` and `restore_state` start it afresh.
 
 A replay cannot repeat, and so a step back cannot cross:
 
-- text from `type_input`, whose keys go in part way through an instruction (run
-  on after it to have history past it), or a `load_basic`
+- a `load_basic`, which puts the program straight into memory
 - a disc or tape change, a write to a disc, or the cassette motor running
 - a `write_memory` with `bank` or `shadow`, or a `read_memory` of a device
   register, which can change the device

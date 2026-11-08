@@ -1015,9 +1015,19 @@ async function main() {
     const counter = 0x1900;
     await call("write_memory", { address: loopAt, bytes: [0x78, 0xa2, 0x00, 0x20, 0x10, 0x20, 0xe8, 0x4c, 0x03, 0x20] });
     await call("write_memory", { address: subAt, bytes: [0x8e, counter & 0xff, counter >> 8, 0x60] });
-    await call("type_input", { text: `CALL &${loopAt.toString(16)}` });
-    while ((await tool("keyboard_state", {})).typing_pending) await tool("run_for_cycles", { cycles: 40000 });
-    await tool("run_frames", { count: 5 });
+    const startLoop = async () => {
+        await call("type_input", { text: `CALL &${loopAt.toString(16)}` });
+        while ((await tool("keyboard_state", {})).typing_pending) await tool("run_for_cycles", { cycles: 40000 });
+        await tool("run_frames", { count: 5 });
+    };
+    const beforeTyping = (await tool("read_registers", {})).elapsed_cycles;
+    await startLoop();
+    const acrossTyping = await tool("step_back", { to_cycle: beforeTyping });
+    ok(
+        "step_back replays across the text type_input typed",
+        acrossTyping.moved && acrossTyping.registers.elapsed_cycles === beforeTyping,
+    );
+    await startLoop();
 
     await tool("run_until_address", { address: afterCall, timeout_secs: 1 });
     const over = await tool("step_back", { over: true });
@@ -1051,8 +1061,8 @@ async function main() {
     ok("step_back to_cycle goes to the write", toWrite.moved && toWrite.registers.pc === subAt && toWrite.registers.elapsed_cycles === wrote.cycle);
     const untouched = await tool("who_wrote", { address: 0x1b00 });
     ok(
-        "who_wrote says how far back it looked when nothing wrote the byte, stopped by the typed CALL",
-        !untouched.found && untouched.searched_cycles > 0 && /part way through an instruction/.test(untouched.why),
+        "who_wrote says how far back it looked when nothing wrote the byte",
+        !untouched.found && untouched.searched_cycles > 0 && /as far back as the history goes/.test(untouched.why),
     );
     const rom = await tool("who_wrote", { address: 0xc000 });
     ok("who_wrote refuses ROM, which no write changes", !rom.found && /ROM/.test(rom.refusal));
