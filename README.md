@@ -158,6 +158,7 @@ work on a session `create_machine` returns. Calls that name the same
 | `read_memory`      | Read bytes from the memory map (with hex dump), reporting which bank was paged; `bank` / `shadow` pick another |
 | `write_memory`     | Poke bytes into memory, into a chosen `bank` or `shadow` RAM if asked |
 | `read_registers`   | Get 6502 CPU registers (PC, A, X, Y, S, P), the frame counter and elapsed cycles |
+| `inspect_hardware` | Read the VIAs, CRTC, video ULA, sound chip, FDC and the rest by their datasheet names, with no side effects (unlike `read_memory` of a device register); name a `device` for one |
 | `run_for_cycles`   | Run N CPU cycles, or up to a breakpoint; reports `cycles_run`, the count actually run (drains output by default — use `clear: false` to peek without consuming) |
 | `run_frames`       | Advance N painted frames — use this, not `run_for_cycles`, to step the display |
 | `run_until_address` | Run until the PC reaches an address (in one sideways `bank` if given), or `timeout_secs` pass; reports `reached`, `stopped_reason` and the registers |

@@ -245,6 +245,35 @@ async function main() {
     ok("has PC register", typeof regs.pc === "number");
     ok("has pcHex", regs.pcHex.startsWith("0x"));
 
+  // inspect_hardware
+  const hardware = JSON.parse(
+    textContent(await callTool(client, "inspect_hardware", { session_id })),
+  );
+  ok(
+    "inspect_hardware gives both VIAs",
+    typeof hardware.sysvia?.ddrb === "number" && !!hardware.uservia,
+  );
+  const sysvia = JSON.parse(
+    textContent(
+      await callTool(client, "inspect_hardware", {
+        session_id,
+        device: "sysvia",
+      }),
+    ),
+  );
+  ok(
+    "inspect_hardware gives one device by name",
+    sysvia.ddrb === hardware.sysvia.ddrb && !("uservia" in sysvia),
+  );
+  const unknownDevice = await client.callTool({
+    name: "inspect_hardware",
+    arguments: { session_id, device: "nonesuch" },
+  });
+  ok(
+    "inspect_hardware refuses an unknown device, naming the real ones",
+    unknownDevice.isError === true && /sysvia/.test(textContent(unknownDevice)),
+  );
+
     // screenshot
     const ssResult = await callTool(client, "screenshot", { session_id, active_only: true });
     const ssImg = imageContent(ssResult);

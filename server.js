@@ -822,6 +822,30 @@ tool(
 );
 
 // ---------------------------------------------------------------------------
+// Tool: inspect_hardware
+// ---------------------------------------------------------------------------
+
+tool(
+    "inspect_hardware",
+    "Read the emulated hardware's internal state without side effects, which read_memory of a device " +
+        "register cannot promise (reading a VIA's port register clears its interrupt flags). Gives each " +
+        "device's registers by their datasheet names, plus what its debugger panel draws: both VIAs " +
+        "(sysvia, uservia: ORA, ORB, DDRA, DDRB, IRA, IRB, the port pins, T1 and T2 counters and latches, " +
+        "SR, ACR, PCR, IFR, IER), crtc, ula, nula, sound, fdc, acia, serial, adc, tube, cmos and paging " +
+        "(ROMSEL, the paged bank and a Master's ACCCON). An Atom has via and ppia. Leave device out for " +
+        "everything the machine has; name one for just that. An unknown device is refused, naming the " +
+        "devices this machine has.",
+    {
+        session_id: z.string().describe("Session ID from create_machine"),
+        device: z.string().optional().describe("One device to read, such as sysvia; all of them when left out"),
+    },
+    async ({ session_id, device }) => {
+        const session = requireSession(session_id);
+        return { content: [{ type: "text", text: JSON.stringify(session.inspectHardware(device)) }] };
+    },
+);
+
+// ---------------------------------------------------------------------------
 // Tool: run_for_cycles
 // ---------------------------------------------------------------------------
 
