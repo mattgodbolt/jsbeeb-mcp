@@ -19,10 +19,10 @@ async function main() {
     // R9+1=8 scanlines × 2 fb lines/scanline = 16 fb lines per char row
     // R6=32 char rows × 16 = 512 fb px tall
     const crops = [
-        { name: "std",    left: 80,  top: 12, width: 512, height: 512 },
-        { name: "narrow", left: 80,  top: 12, width: 512, height: 256 }, // half height
-        { name: "wide",   left: 80,  top: 12, width: 640, height: 512 },
-        { name: "sq2x",   left: 80,  top: 12, width: 512, height: 512, scalew: 256 }, // halve width
+        { name: "std", left: 80, top: 12, width: 512, height: 512 },
+        { name: "narrow", left: 80, top: 12, width: 512, height: 256 }, // half height
+        { name: "wide", left: 80, top: 12, width: 640, height: 512 },
+        { name: "sq2x", left: 80, top: 12, width: 512, height: 512, scalew: 256 }, // halve width
     ];
 
     for (const c of crops) {
@@ -36,4 +36,7 @@ async function main() {
     session.destroy();
 }
 
-main().catch(err => { console.error(err); process.exit(1); });
+main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+});
