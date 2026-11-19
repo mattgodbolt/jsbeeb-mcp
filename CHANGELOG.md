@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.6.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v4.5.0...v4.6.0) (2026-11-19)
+
+
+### Features
+
+* add inspect_hardware, a side-effect-free read of every device's state ([#71](https://github.com/mattgodbolt/jsbeeb-mcp/issues/71)) ([ec316f3](https://github.com/mattgodbolt/jsbeeb-mcp/commit/ec316f3b76d5ebc4abe43be829dc330048366880))
+
 ## [4.5.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v4.4.0...v4.5.0) (2026-11-08)
 
 
