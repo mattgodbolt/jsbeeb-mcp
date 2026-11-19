@@ -12,11 +12,11 @@ const CYCLES_PER_FRAME = 40_000; // 2MHz / 50Hz
 // jsbeeb framebuffer has 2 framebuffer lines per scanline → 512px tall active area.
 // Borders: left=80, top=12, right=48. MODE 2 is 160 logical pixels in 896 fb pixels.
 // We halve the horizontal scale so pixels are roughly square.
-const LEFT   = 80;
-const TOP    = 12;
-const FB_W   = 1024;
-const WIDTH  = FB_W - LEFT - 48; // 896
-const HEIGHT = 512;               // 256 BBC scanlines × 2
+const LEFT = 80;
+const TOP = 12;
+const FB_W = 1024;
+const WIDTH = FB_W - LEFT - 48; // 896
+const HEIGHT = 512; // 256 BBC scanlines × 2
 
 const discPath = process.argv[2] ?? "/tmp/demo.ssd";
 
@@ -46,4 +46,7 @@ async function main() {
     session.destroy();
 }
 
-main().catch(err => { console.error(err); process.exit(1); });
+main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+});

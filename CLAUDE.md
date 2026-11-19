@@ -13,6 +13,7 @@ prefixes or release-please will not create a release PR:
 - `chore:` / `docs:` / `refactor:` — no release triggered
 
 Examples:
+
 ```
 feat: add sound chip debugging tools
 fix: handle missing disc image gracefully
@@ -28,6 +29,7 @@ chore: update dependencies
 ## Adding new tools
 
 Follow the existing pattern in `server.js`:
+
 ```javascript
 server.tool("tool_name", "Description", { params... }, async ({ params }) => {
     const session = requireSession(session_id);
@@ -42,11 +44,13 @@ and `session._soundChip` (the InstrumentedSoundChip).
 ## Testing locally
 
 Point your MCP client to the local server instead of the npm package:
+
 ```bash
 claude mcp add jsbeeb node /path/to/jsbeeb-mcp/server.js
 ```
 
 If also developing jsbeeb itself, link the local copy:
+
 ```bash
 cd /path/to/jsbeeb && npm link
 cd /path/to/jsbeeb-mcp && npm link jsbeeb
