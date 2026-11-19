@@ -742,6 +742,11 @@ async function main() {
         arguments: { session_id: bpSession, type: "write" },
     });
     ok("a write breakpoint without an address is refused", noAddress.isError === true);
+    const fractionalAddress = await client.callTool({
+        name: "set_breakpoint",
+        arguments: { session_id: bpSession, type: "write", address: 2304.5 },
+    });
+    ok("a fractional address is refused", fractionalAddress.isError === true);
     const addressedEvent = await client.callTool({
         name: "set_breakpoint",
         arguments: { session_id: bpSession, type: "brk", address: 0x900 },

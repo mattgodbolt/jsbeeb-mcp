@@ -1440,6 +1440,7 @@ tool(
         session_id: z.string().describe("Session ID from create_machine"),
         address: z
             .number()
+            .int()
             .min(0)
             .max(65535)
             .optional()
