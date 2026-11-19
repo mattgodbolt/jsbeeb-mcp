@@ -116,8 +116,7 @@ function pressKey(session, selector, down) {
 // second processors, not machines, and are the only ones without a short name.
 const MachineModels = allModels.filter((m) => m.synonyms.length > 0);
 const ModelNames = MachineModels.map((m) => m.synonyms[0]);
-const ModelDescription =
-    "Machine to emulate: " + MachineModels.map((m) => `${m.synonyms[0]} (${m.name})`).join(", ");
+const ModelDescription = "Machine to emulate: " + MachineModels.map((m) => `${m.synonyms[0]} (${m.name})`).join(", ");
 
 function secondsOfCycles(modelName, seconds) {
     return seconds * findModel(modelName).cyclesPerSecond;
@@ -384,7 +383,14 @@ class Coverage {
                     range.addresses++;
                     range.executions += count;
                 } else {
-                    range = { order: ranges.length, start: address, end: address, bank, addresses: 1, executions: count };
+                    range = {
+                        order: ranges.length,
+                        start: address,
+                        end: address,
+                        bank,
+                        addresses: 1,
+                        executions: count,
+                    };
                     ranges.push(range);
                 }
             }
@@ -1084,10 +1090,7 @@ tool(
     {
         session_id: z.string().describe("Session ID from create_machine"),
         hard: z.boolean().default(true).describe("Hard reset (power-on) if true, soft reset if false"),
-        autoboot: z
-            .boolean()
-            .default(false)
-            .describe("Hold SHIFT during reset to autoboot the disc in drive 0"),
+        autoboot: z.boolean().default(false).describe("Hold SHIFT during reset to autoboot the disc in drive 0"),
     },
     async ({ session_id, hard, autoboot }) => {
         const session = requireSession(session_id);
@@ -1233,7 +1236,9 @@ tool(
         const session = requireSession(session_id);
         const sc = session._soundChip;
         if (!sc || !sc.getState) {
-            return { content: [{ type: "text", text: "Sound chip not available (session may be using FakeSoundChip)" }] };
+            return {
+                content: [{ type: "text", text: "Sound chip not available (session may be using FakeSoundChip)" }],
+            };
         }
         const state = sc.getState();
         // Convert tone periods to frequencies for convenience
@@ -1265,7 +1270,9 @@ tool(
             return { content: [{ type: "text", text: "Sound chip capture not available" }] };
         }
         sc.startCapture();
-        return { content: [{ type: "text", text: "Sound capture started. Run the emulator, then call stop_sound_capture." }] };
+        return {
+            content: [{ type: "text", text: "Sound capture started. Run the emulator, then call stop_sound_capture." }],
+        };
     },
 );
 
@@ -1320,9 +1327,8 @@ tool(
             return `${w.cycle}: 0x${v.toString(16).padStart(2, "0")} ${desc}`;
         });
 
-        const header = total > max_entries
-            ? `Showing last ${max_entries} of ${total} writes:\n`
-            : `${total} writes captured:\n`;
+        const header =
+            total > max_entries ? `Showing last ${max_entries} of ${total} writes:\n` : `${total} writes captured:\n`;
 
         return { content: [{ type: "text", text: header + decoded.join("\n") }] };
     },
@@ -1338,7 +1344,9 @@ tool(
     {
         session_id: z.string().describe("Session ID from create_machine"),
         address: z.number().min(0).max(65535).describe("Address to break on (0–65535)"),
-        type: z.enum(["execute", "read", "write"]).default("execute")
+        type: z
+            .enum(["execute", "read", "write"])
+            .default("execute")
             .describe("Breakpoint type: execute (PC), read (memory read), write (memory write)"),
         bank: z
             .number()
@@ -1355,16 +1363,18 @@ tool(
         const session = requireSession(session_id);
         const id = session.addBreakpoint(type, address, { bank });
         return {
-            content: [{
-                type: "text",
-                text: JSON.stringify({
-                    breakpoint_id: id,
-                    type,
-                    address,
-                    addressHex: hexAddress(address),
-                    bank,
-                }),
-            }],
+            content: [
+                {
+                    type: "text",
+                    text: JSON.stringify({
+                        breakpoint_id: id,
+                        type,
+                        address,
+                        addressHex: hexAddress(address),
+                        bank,
+                    }),
+                },
+            ],
         };
     },
 );
@@ -1637,10 +1647,12 @@ tool(
             snapshot: session.snapshot(),
         });
         return {
-            content: [{
-                type: "text",
-                text: JSON.stringify({ state_id, model: session.modelName, fitted: fittings.get(session), label }),
-            }],
+            content: [
+                {
+                    type: "text",
+                    text: JSON.stringify({ state_id, model: session.modelName, fitted: fittings.get(session), label }),
+                },
+            ],
         };
     },
 );
@@ -1685,16 +1697,18 @@ tool(
         session.restore(saved.snapshot);
         const regs = session.registers();
         return {
-            content: [{
-                type: "text",
-                text: JSON.stringify({
-                    state_id,
-                    model: saved.model,
-                    label: saved.label,
-                    pcHex: hexAddress(regs.pc),
-                    frame_count: session.frameCount,
-                }),
-            }],
+            content: [
+                {
+                    type: "text",
+                    text: JSON.stringify({
+                        state_id,
+                        model: saved.model,
+                        label: saved.label,
+                        pcHex: hexAddress(regs.pc),
+                        frame_count: session.frameCount,
+                    }),
+                },
+            ],
         };
     },
 );
@@ -1789,11 +1803,11 @@ tool(
         const dis = cpu.disassembler;
         const lines = [];
         let addr = address;
-        for (let i = 0; i < count && addr <= 0xFFFF; i++) {
+        for (let i = 0; i < count && addr <= 0xffff; i++) {
             const [text, nextAddr] = dis.disassemble(addr, true);
             const bytes = [];
             for (let b = addr; b < nextAddr; b++) bytes.push(cpu.peekmem(b));
-            const hex = bytes.map(b => b.toString(16).padStart(2, "0")).join(" ");
+            const hex = bytes.map((b) => b.toString(16).padStart(2, "0")).join(" ");
             lines.push(`${addr.toString(16).padStart(4, "0").toUpperCase()}  ${hex.padEnd(8)}  ${text}`);
             addr = nextAddr;
         }

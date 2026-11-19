@@ -51,7 +51,8 @@ function cfsCrc(bytes) {
     let crc = 0;
     for (const byte of bytes) {
         crc ^= byte << 8;
-        for (let bit = 0; bit < 8; bit++) crc = crc & 0x8000 ? (((crc ^ 0x0810) << 1) | 1) & 0xffff : (crc << 1) & 0xffff;
+        for (let bit = 0; bit < 8; bit++)
+            crc = crc & 0x8000 ? (((crc ^ 0x0810) << 1) | 1) & 0xffff : (crc << 1) & 0xffff;
     }
     return [crc >> 8, crc & 0xff];
 }
@@ -64,17 +65,36 @@ function uefChunk(id, data) {
 function basicTape(name, program) {
     const lastBlockFlag = 0x80;
     const header = [
-        ...Buffer.from(name), 0,
-        0x00, 0x19, 0xff, 0xff, // load address
-        0x23, 0x80, 0xff, 0xff, // execution address
-        0, 0, // block number
-        program.length & 0xff, program.length >> 8,
+        ...Buffer.from(name),
+        0,
+        0x00,
+        0x19,
+        0xff,
+        0xff, // load address
+        0x23,
+        0x80,
+        0xff,
+        0xff, // execution address
+        0,
+        0, // block number
+        program.length & 0xff,
+        program.length >> 8,
         lastBlockFlag,
-        0, 0, 0, 0,
+        0,
+        0,
+        0,
+        0,
     ];
     const block = [0x2a, ...header, ...cfsCrc(header), ...program, ...cfsCrc(program)];
     const carrierTone = uefChunk(0x110, [0xdc, 0x05]);
-    return Uint8Array.from([...Buffer.from("UEF File!\0"), 10, 0, ...carrierTone, ...uefChunk(0x100, block), ...carrierTone]);
+    return Uint8Array.from([
+        ...Buffer.from("UEF File!\0"),
+        10,
+        0,
+        ...carrierTone,
+        ...uefChunk(0x100, block),
+        ...carrierTone,
+    ]);
 }
 
 /** A zip holding `data` as `name`, stored uncompressed. */
@@ -83,13 +103,54 @@ function storedZip(name, data) {
     const u32 = (n) => [n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, n >>> 24];
     const nameBytes = [...Buffer.from(name)];
     const sizes = [...u32(crc32(data)), ...u32(data.length), ...u32(data.length)];
-    const local = [...u32(0x04034b50), ...u16(10), 0, 0, 0, 0, 0, 0, 0, 0, ...sizes, ...u16(nameBytes.length), 0, 0, ...nameBytes];
+    const local = [
+        ...u32(0x04034b50),
+        ...u16(10),
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        ...sizes,
+        ...u16(nameBytes.length),
+        0,
+        0,
+        ...nameBytes,
+    ];
     const central = [
-        ...u32(0x02014b50), ...u16(10), ...u16(10), 0, 0, 0, 0, 0, 0, 0, 0, ...sizes,
-        ...u16(nameBytes.length), ...Array(16).fill(0), ...nameBytes,
+        ...u32(0x02014b50),
+        ...u16(10),
+        ...u16(10),
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        ...sizes,
+        ...u16(nameBytes.length),
+        ...Array(16).fill(0),
+        ...nameBytes,
     ];
     const centralStart = local.length + data.length;
-    const end = [...u32(0x06054b50), 0, 0, 0, 0, ...u16(1), ...u16(1), ...u32(central.length), ...u32(centralStart), 0, 0];
+    const end = [
+        ...u32(0x06054b50),
+        0,
+        0,
+        0,
+        0,
+        ...u16(1),
+        ...u16(1),
+        ...u32(central.length),
+        ...u32(centralStart),
+        0,
+        0,
+    ];
     return Uint8Array.from([...local, ...data, ...central, ...end]);
 }
 
@@ -286,7 +347,11 @@ async function main() {
     ok("disc program output correct", discOutput.screenText.includes("HELLO FROM BEEBASM"));
 
     // load_disc by reference, into the other drive
-    const byRef = await callTool(client, "load_disc", { session_id, image_ref: pathToFileURL(discPath).href, drive: 1 });
+    const byRef = await callTool(client, "load_disc", {
+        session_id,
+        image_ref: pathToFileURL(discPath).href,
+        drive: 1,
+    });
     ok("load_disc takes a URL into drive 1", JSON.parse(textContent(byRef)).drive === 1);
     await callTool(client, "type_input", { session_id, text: "*RUN :1.hello" });
     const drive1Run = JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id })));
@@ -376,12 +441,30 @@ async function main() {
         "each run stops at the breakpoint",
         sweep.every((r) => r.breakpoint?.id === bpResult.breakpoint_id && r.completed === false),
     );
-    ok("each run says why it stopped", sweep.every((r) => r.stopped_reason === "breakpoint"));
-    ok("each run from the breakpoint moves on", sweep.every((r) => r.cycles_run > 0));
-    ok("cycles_run is the count run, not requested", sweep.every((r) => r.cycles_run === r.actual));
-    ok("a stopped run reports fewer cycles than asked", sweep.every((r) => r.cycles_run < 600000));
-    ok("registers carry the cycle counter", sweep.every((r) => typeof r.registers.elapsed_cycles === "number"));
-    ok("registers stop at the breakpoint", sweep.every((r) => r.registers.pc === irqAddress));
+    ok(
+        "each run says why it stopped",
+        sweep.every((r) => r.stopped_reason === "breakpoint"),
+    );
+    ok(
+        "each run from the breakpoint moves on",
+        sweep.every((r) => r.cycles_run > 0),
+    );
+    ok(
+        "cycles_run is the count run, not requested",
+        sweep.every((r) => r.cycles_run === r.actual),
+    );
+    ok(
+        "a stopped run reports fewer cycles than asked",
+        sweep.every((r) => r.cycles_run < 600000),
+    );
+    ok(
+        "registers carry the cycle counter",
+        sweep.every((r) => typeof r.registers.elapsed_cycles === "number"),
+    );
+    ok(
+        "registers stop at the breakpoint",
+        sweep.every((r) => r.registers.pc === irqAddress),
+    );
 
     // A hit during type_input is reported by type_input itself, and the next run carries on.
     await callTool(client, "clear_breakpoint", { session_id: sid2, id: 0 });
@@ -411,13 +494,19 @@ async function main() {
     await callTool(client, "key_down", { session_id: sid2, key: "A" });
     const holdingA = await keyboard();
     console.log("held:", JSON.stringify(holdingA.held_keys));
-    ok("a held key is reported by name", holdingA.held_keys.some((k) => k.name === "A"));
+    ok(
+        "a held key is reported by name",
+        holdingA.held_keys.some((k) => k.name === "A"),
+    );
     ok(
         "with its internal key number and INKEY number",
         holdingA.held_keys.some((k) => k.internal === 0x41 && k.inkey === -66),
     );
     const releasedA = await releaseAll();
-    ok("release_all_keys says what it released", releasedA.released.some((k) => k.name === "A"));
+    ok(
+        "release_all_keys says what it released",
+        releasedA.released.some((k) => k.name === "A"),
+    );
     ok("and that no typing was pending", releasedA.cancelled_typing === false);
     ok("and leaves nothing held", (await keyboard()).held_keys.length === 0);
 
@@ -533,7 +622,10 @@ async function main() {
     ok("restore_state rewinds memory", restored.includes("42") && !restored.includes("99"));
 
     const listed = JSON.parse(textContent(await callTool(client, "list_states", { session_id: sid4 })));
-    ok("list_states finds the state", listed.states.some((s) => s.state_id === state_id));
+    ok(
+        "list_states finds the state",
+        listed.states.some((s) => s.state_id === state_id),
+    );
     ok("list_states keeps the label", listed.states[0].label === "A% is 42");
 
     // A state can seed a second machine, so long as it is the same model, fitted the same way.
@@ -561,7 +653,9 @@ async function main() {
     ok("and main apart from shadow", JSON.stringify((await readShadow(false)).bytes) === "[30,40]");
     ok("a Master reports ACCCON", typeof shadowRead.paging.acccon === "number" && shadowRead.paging.shadow === true);
 
-    const numpad = JSON.parse(textContent(await callTool(client, "key_down", { session_id: masterSid, key: "NUMPAD7" })));
+    const numpad = JSON.parse(
+        textContent(await callTool(client, "key_down", { session_id: masterSid, key: "NUMPAD7" })),
+    );
     ok("a Master presses a numpad key by name", numpad.pressed[0]?.name === "NUMPAD7");
     await callTool(client, "key_up", { session_id: masterSid, key: "NUMPAD7" });
 
@@ -586,7 +680,9 @@ async function main() {
         const tapePath = resolve(tmpdir(), `jsbeeb-mcp-test-${process.pid}-${fileName}`);
         writeFileSync(tapePath, contents);
         try {
-            const loaded = JSON.parse(textContent(await callTool(client, "load_tape", { session_id: tapeSid, image_path: tapePath })));
+            const loaded = JSON.parse(
+                textContent(await callTool(client, "load_tape", { session_id: tapeSid, image_path: tapePath })),
+            );
             await callTool(client, "type_input", { session_id: tapeSid, text: "*TAPE" });
             await callTool(client, "type_input", { session_id: tapeSid, text: 'CHAIN""' });
             const run = JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id: tapeSid })));
@@ -602,7 +698,9 @@ async function main() {
     ok("load_tape opens a zip for the tape inside", fromZip.loaded.tape === "SIXBY7.UEF" && fromZip.ran);
 
     await callTool(client, "type_input", { session_id: tapeSid, text: "PRINT 6*7\n" });
-    const oneReturn = JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id: tapeSid }))).screenText;
+    const oneReturn = JSON.parse(
+        textContent(await callTool(client, "run_until_prompt", { session_id: tapeSid })),
+    ).screenText;
     ok("type_input presses no second RETURN after a newline", oneReturn.includes("42") && !/>\s*\n>/.test(oneReturn));
 
     // --- Keyboard buffer ---
@@ -629,15 +727,24 @@ async function main() {
     const dfsBank = 14;
     const emptyBank = 4;
     await callTool(client, "set_breakpoint", { session_id: bankSid, address: serviceEntry, bank: emptyBank });
-    const unbroken = JSON.parse(textContent(await callTool(client, "type_input", { session_id: bankSid, text: "*HELP" })));
+    const unbroken = JSON.parse(
+        textContent(await callTool(client, "type_input", { session_id: bankSid, text: "*HELP" })),
+    );
     ok("a breakpoint in a bank nothing runs from stays quiet", unbroken.completed === true && !unbroken.breakpoint);
     await callTool(client, "clear_breakpoint", { session_id: bankSid, id: 0 });
     const setInDfs = JSON.parse(
-        textContent(await callTool(client, "set_breakpoint", { session_id: bankSid, address: serviceEntry, bank: dfsBank })),
+        textContent(
+            await callTool(client, "set_breakpoint", { session_id: bankSid, address: serviceEntry, bank: dfsBank }),
+        ),
     );
     ok("set_breakpoint reports its bank", setInDfs.bank === dfsBank);
-    const broken = JSON.parse(textContent(await callTool(client, "type_input", { session_id: bankSid, text: "*HELP" })));
-    ok("one in DFS's bank stops at DFS's service entry", broken.breakpoint?.bank === dfsBank && broken.registers?.pc === serviceEntry);
+    const broken = JSON.parse(
+        textContent(await callTool(client, "type_input", { session_id: bankSid, text: "*HELP" })),
+    );
+    ok(
+        "one in DFS's bank stops at DFS's service entry",
+        broken.breakpoint?.bank === dfsBank && broken.registers?.pc === serviceEntry,
+    );
     await callTool(client, "destroy_machine", { session_id: bankSid });
 
     // --- run_until_address ---
@@ -678,7 +785,9 @@ async function main() {
     const beaten = await runUntil({ address: afterInc });
     ok(
         "a breakpoint on the way stops it first",
-        beaten.reached === false && beaten.stopped_reason === "breakpoint" && beaten.breakpoint?.id === loopBreakpoint.breakpoint_id,
+        beaten.reached === false &&
+            beaten.stopped_reason === "breakpoint" &&
+            beaten.breakpoint?.id === loopBreakpoint.breakpoint_id,
     );
     ok("with the PC at the breakpoint", beaten.registers.pc === loopStart);
     await client.callTool({ name: "run_until_prompt", arguments: { session_id: loopSid, timeout_secs: timeoutSecs } });
@@ -689,8 +798,12 @@ async function main() {
     );
     ok(
         "shaped like its other results",
-        pending.reached === false && pending.completed === undefined && pending.address === afterInc &&
-            pending.addressHex === "0x2002" && pending.cycles_run === 0 && pending.registers.pc === loopStart,
+        pending.reached === false &&
+            pending.completed === undefined &&
+            pending.address === afterInc &&
+            pending.addressHex === "0x2002" &&
+            pending.cycles_run === 0 &&
+            pending.registers.pc === loopStart,
     );
     await callTool(client, "clear_breakpoint", { session_id: loopSid, id: 0 });
 
@@ -700,7 +813,8 @@ async function main() {
     const reachedThroughBreakpoint = await runUntil({ address: afterInc });
     ok(
         "a breakpoint on the address itself still reports it reached",
-        reachedThroughBreakpoint.reached === true && reachedThroughBreakpoint.stopped_reason === "address" &&
+        reachedThroughBreakpoint.reached === true &&
+            reachedThroughBreakpoint.stopped_reason === "address" &&
             reachedThroughBreakpoint.breakpoint?.id === onTarget.breakpoint_id,
     );
     await callTool(client, "clear_breakpoint", { session_id: loopSid, id: 0 });
@@ -719,7 +833,9 @@ async function main() {
     await callTool(client, "run_for_cycles", { session_id: loopSid, cycles: 1000 });
     await callTool(client, "set_breakpoint", { session_id: loopSid, address: midPc });
     await callTool(client, "restore_state", { session_id: loopSid, state_id: notAtStop });
-    const atRestoredPc = JSON.parse(textContent(await callTool(client, "run_for_cycles", { session_id: loopSid, cycles: 1000 })));
+    const atRestoredPc = JSON.parse(
+        textContent(await callTool(client, "run_for_cycles", { session_id: loopSid, cycles: 1000 })),
+    );
     ok(
         "a breakpoint at the PC of a state saved elsewhere fires at once",
         atRestoredPc.stopped_reason === "breakpoint" && atRestoredPc.cycles_run === 0,
@@ -748,10 +864,19 @@ async function main() {
             }),
         ),
     );
-    console.log("coverage:", JSON.stringify({ ...coverage, ranges: coverage.ranges.slice(0, 5), hot_spots: coverage.hot_spots.slice(0, 5) }));
+    console.log(
+        "coverage:",
+        JSON.stringify({ ...coverage, ranges: coverage.ranges.slice(0, 5), hot_spots: coverage.hot_spots.slice(0, 5) }),
+    );
     const loopRange = coverage.ranges.find((r) => r.startHex === "0x2000");
-    ok("the loop is one stretch of code", loopRange?.endHex === "0x200b" && loopRange.addresses === 6 && loopRange.bank === undefined);
-    ok("ROM code in DFS's bank is told apart", coverage.ranges.some((r) => r.bank === dfsBank && r.startHex === "0x8003"));
+    ok(
+        "the loop is one stretch of code",
+        loopRange?.endHex === "0x200b" && loopRange.addresses === 6 && loopRange.bank === undefined,
+    );
+    ok(
+        "ROM code in DFS's bank is told apart",
+        coverage.ranges.some((r) => r.bank === dfsBank && r.startHex === "0x8003"),
+    );
     ok(
         "and credited to no other bank",
         coverage.ranges.every((r) => r.bank === dfsBank || !rangeHolds(r, serviceEntry)),
@@ -759,8 +884,14 @@ async function main() {
     ok("nothing is credited to a bank nothing runs from", !coverage.ranges.some((r) => r.bank === emptyBank));
     ok("totals add up", coverage.instructions_executed === coverage.ranges.reduce((n, r) => n + r.executions, 0));
     const hotLoop = coverage.hot_spots.filter((h) => h.addressHex === "0x2000" || h.addressHex === "0x200b");
-    ok("each of the loop's instructions is counted", hotLoop.length === 2 && Math.abs(hotLoop[0].count - hotLoop[1].count) <= 1);
-    ok("hot spots are busiest first", coverage.hot_spots.every((h, i, all) => i === 0 || all[i - 1].count >= h.count));
+    ok(
+        "each of the loop's instructions is counted",
+        hotLoop.length === 2 && Math.abs(hotLoop[0].count - hotLoop[1].count) <= 1,
+    );
+    ok(
+        "hot spots are busiest first",
+        coverage.hot_spots.every((h, i, all) => i === 0 || all[i - 1].count >= h.count),
+    );
     const stoppedTwice = await client.callTool({ name: "stop_coverage", arguments: { session_id: loopSid } });
     ok("stop_coverage stops it", stoppedTwice.isError === true);
 
@@ -770,7 +901,10 @@ async function main() {
     const oneLap = JSON.parse(
         textContent(await callTool(client, "stop_coverage", { session_id: loopSid, max_hot_spots: everyAddress })),
     );
-    ok("the instruction a stop resumes at is recorded", oneLap.hot_spots.some((h) => h.addressHex === "0x2000" && h.count === 1));
+    ok(
+        "the instruction a stop resumes at is recorded",
+        oneLap.hot_spots.some((h) => h.addressHex === "0x2000" && h.count === 1),
+    );
 
     await callTool(client, "start_coverage", { session_id: loopSid });
     await runUntil({ address: afterInc });
@@ -814,9 +948,18 @@ async function main() {
     const andyLoop = 0x8000;
     // SEI; ROMSEL |= &80 to page ANDY in; copy INC &70: JMP &8000 there; JMP &8000.
     const intoAndy = [
-        0x78, 0xa5, 0xf4, 0x09, 0x80, 0x8d, 0x30, 0xfe,
+        0x78,
+        0xa5,
+        0xf4,
+        0x09,
+        0x80,
+        0x8d,
+        0x30,
+        0xfe,
         ...[0xe6, 0x70, 0x4c, 0x00, 0x80].flatMap((byte, i) => [0xa9, byte, 0x8d, i, 0x80]),
-        0x4c, 0x00, 0x80,
+        0x4c,
+        0x00,
+        0x80,
     ];
     await callTool(client, "write_memory", { session_id: andySid, address: loopStart, bytes: intoAndy });
     await callTool(client, "type_input", { session_id: andySid, text: "CALL &2000" });
@@ -837,15 +980,23 @@ async function main() {
     await callTool(client, "destroy_machine", { session_id: andySid });
 
     // MOS 0.10 pages BASIC, in socket bank 12, by writing 0 to ROMSEL.
-    const aliasedSid = JSON.parse(textContent(await callTool(client, "create_machine", { model: "B-MOS0.10" }))).session_id;
+    const aliasedSid = JSON.parse(
+        textContent(await callTool(client, "create_machine", { model: "B-MOS0.10" })),
+    ).session_id;
     await callTool(client, "start_coverage", { session_id: aliasedSid });
     await callTool(client, "type_input", { session_id: aliasedSid, text: "PRINT 6*7" });
     await callTool(client, "run_until_prompt", { session_id: aliasedSid });
     const aliasedCoverage = JSON.parse(
         textContent(await callTool(client, "stop_coverage", { session_id: aliasedSid, max_ranges: 2000 })),
     );
-    ok("code run through an aliased ROMSEL is credited to the socket's bank", aliasedCoverage.ranges.some((r) => r.bank === 12));
-    ok("and not to the ROMSEL value", aliasedCoverage.ranges.every((r) => typeof r.bank !== "number" || r.bank >= 12));
+    ok(
+        "code run through an aliased ROMSEL is credited to the socket's bank",
+        aliasedCoverage.ranges.some((r) => r.bank === 12),
+    );
+    ok(
+        "and not to the ROMSEL value",
+        aliasedCoverage.ranges.every((r) => typeof r.bank !== "number" || r.bank >= 12),
+    );
     await callTool(client, "destroy_machine", { session_id: aliasedSid });
 
     // --- Econet ---
@@ -858,7 +1009,10 @@ async function main() {
     ok("the station number reads back from the Econet links", /^\s+42$/m.test(station.screenText));
     const econetHistory = JSON.parse(textContent(await callTool(client, "history", { session_id: econetSid })));
     const econetKeep = await client.callTool({ name: "history", arguments: { session_id: econetSid, recent: 3 } });
-    const econetOff = await client.callTool({ name: "history", arguments: { session_id: econetSid, recent: 0, seconds: 0 } });
+    const econetOff = await client.callTool({
+        name: "history",
+        arguments: { session_id: econetSid, recent: 0, seconds: 0 },
+    });
     ok(
         "an Econet machine keeps no history, refuses to start one, and takes none",
         econetHistory.snapshots === 0 && econetKeep.isError === true && !econetOff.isError,
@@ -870,28 +1024,61 @@ async function main() {
     const masterNetSid = JSON.parse(
         textContent(await callTool(client, "create_machine", { model: "Master", econet: true })),
     ).session_id;
-    for (const line of ["*NET", "*I AM SYST", "*CAT"]) await callTool(client, "type_input", { session_id: masterNetSid, text: line });
+    for (const line of ["*NET", "*I AM SYST", "*CAT"])
+        await callTool(client, "type_input", { session_id: masterNetSid, text: line });
     const catalogue = JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id: masterNetSid })));
     ok("a Master logs on to the file server and catalogues it", /Dir\. \$ .*Lib\. LIBRARY/.test(catalogue.screenText));
-    const { state_id: netState } = JSON.parse(textContent(await callTool(client, "save_state", { session_id: masterNetSid })));
-    const listedNet = JSON.parse(textContent(await callTool(client, "list_states", {}))).states.find((s) => s.state_id === netState);
-    ok("list_states says how the machine was fitted", listedNet?.fitted?.econet === true && listedNet.fitted.station_id === 101);
-    const plainMasterSid = JSON.parse(textContent(await callTool(client, "create_machine", { model: "Master" }))).session_id;
-    const intoPlain = await client.callTool({ name: "restore_state", arguments: { session_id: plainMasterSid, state_id: netState } });
-    ok("an Econet state will not restore into a machine without Econet", intoPlain.isError === true && textContent(intoPlain).includes("econet true there, false here"));
-    const otherNetSid = JSON.parse(textContent(await callTool(client, "create_machine", { model: "Master", econet: true }))).session_id;
+    const { state_id: netState } = JSON.parse(
+        textContent(await callTool(client, "save_state", { session_id: masterNetSid })),
+    );
+    const listedNet = JSON.parse(textContent(await callTool(client, "list_states", {}))).states.find(
+        (s) => s.state_id === netState,
+    );
+    ok(
+        "list_states says how the machine was fitted",
+        listedNet?.fitted?.econet === true && listedNet.fitted.station_id === 101,
+    );
+    const plainMasterSid = JSON.parse(
+        textContent(await callTool(client, "create_machine", { model: "Master" })),
+    ).session_id;
+    const intoPlain = await client.callTool({
+        name: "restore_state",
+        arguments: { session_id: plainMasterSid, state_id: netState },
+    });
+    ok(
+        "an Econet state will not restore into a machine without Econet",
+        intoPlain.isError === true && textContent(intoPlain).includes("econet true there, false here"),
+    );
+    const otherNetSid = JSON.parse(
+        textContent(await callTool(client, "create_machine", { model: "Master", econet: true })),
+    ).session_id;
     await callTool(client, "restore_state", { session_id: otherNetSid, state_id: netState });
-    for (const line of ["*I AM SYST", "*CAT"]) await callTool(client, "type_input", { session_id: otherNetSid, text: line });
+    for (const line of ["*I AM SYST", "*CAT"])
+        await callTool(client, "type_input", { session_id: otherNetSid, text: line });
     const relogged = JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id: otherNetSid })));
-    ok("and another Master with Econet logs on again after restoring it", /Dir\. \$ .*Lib\. LIBRARY/.test(relogged.screenText));
-    const tubeSid = JSON.parse(textContent(await callTool(client, "create_machine", { model: "Master", tube: true }))).session_id;
-    const { state_id: tubeState } = JSON.parse(textContent(await callTool(client, "save_state", { session_id: tubeSid })));
-    const intoNoTube = await client.callTool({ name: "restore_state", arguments: { session_id: plainMasterSid, state_id: tubeState } });
-    ok("a tube state will not restore into a machine without one", intoNoTube.isError === true && textContent(intoNoTube).includes("tube true there, false here"));
+    ok(
+        "and another Master with Econet logs on again after restoring it",
+        /Dir\. \$ .*Lib\. LIBRARY/.test(relogged.screenText),
+    );
+    const tubeSid = JSON.parse(
+        textContent(await callTool(client, "create_machine", { model: "Master", tube: true })),
+    ).session_id;
+    const { state_id: tubeState } = JSON.parse(
+        textContent(await callTool(client, "save_state", { session_id: tubeSid })),
+    );
+    const intoNoTube = await client.callTool({
+        name: "restore_state",
+        arguments: { session_id: plainMasterSid, state_id: tubeState },
+    });
+    ok(
+        "a tube state will not restore into a machine without one",
+        intoNoTube.isError === true && textContent(intoNoTube).includes("tube true there, false here"),
+    );
     await callTool(client, "delete_state", { state_id: tubeState });
     await callTool(client, "destroy_machine", { session_id: tubeSid });
     await callTool(client, "delete_state", { state_id: netState });
-    for (const id of [masterNetSid, plainMasterSid, otherNetSid]) await callTool(client, "destroy_machine", { session_id: id });
+    for (const id of [masterNetSid, plainMasterSid, otherNetSid])
+        await callTool(client, "destroy_machine", { session_id: id });
     const atomNet = await client.callTool({ name: "create_machine", arguments: { model: "Atom", econet: true } });
     ok("the Atom refuses Econet", atomNet.isError === true);
 
@@ -910,13 +1097,24 @@ async function main() {
     }
     const nulaSid = JSON.parse(textContent(await callTool(client, "create_machine", { video_nula: true }))).session_id;
     const nulaBackground = await backgroundAfterNulaRed(nulaSid);
-    ok("a VideoNuLA takes a palette written at &FE23", nulaBackground[0] > 200 && nulaBackground[1] < 50 && nulaBackground[2] < 50);
+    ok(
+        "a VideoNuLA takes a palette written at &FE23",
+        nulaBackground[0] > 200 && nulaBackground[1] < 50 && nulaBackground[2] < 50,
+    );
     const ulaSid = JSON.parse(textContent(await callTool(client, "create_machine", {}))).session_id;
     const ulaBackground = await backgroundAfterNulaRed(ulaSid);
     ok("a machine without one does not", !(ulaBackground[0] > 200 && ulaBackground[1] < 50 && ulaBackground[2] < 50));
-    const { state_id: nulaState } = JSON.parse(textContent(await callTool(client, "save_state", { session_id: nulaSid })));
-    const intoUla = await client.callTool({ name: "restore_state", arguments: { session_id: ulaSid, state_id: nulaState } });
-    ok("a VideoNuLA state will not restore into a machine without one", intoUla.isError === true && textContent(intoUla).includes("video_nula true there, false here"));
+    const { state_id: nulaState } = JSON.parse(
+        textContent(await callTool(client, "save_state", { session_id: nulaSid })),
+    );
+    const intoUla = await client.callTool({
+        name: "restore_state",
+        arguments: { session_id: ulaSid, state_id: nulaState },
+    });
+    ok(
+        "a VideoNuLA state will not restore into a machine without one",
+        intoUla.isError === true && textContent(intoUla).includes("video_nula true there, false here"),
+    );
     await callTool(client, "delete_state", { state_id: nulaState });
     for (const id of [nulaSid, ulaSid]) await callTool(client, "destroy_machine", { session_id: id });
     const atomNula = await client.callTool({ name: "create_machine", arguments: { model: "Atom", video_nula: true } });
@@ -925,7 +1123,9 @@ async function main() {
     // --- Sideways ROMs ---
     console.log("\n--- sideways ROMs ---");
     async function romTitle(sid, bank, length) {
-        const { bytes } = JSON.parse(textContent(await callTool(client, "read_memory", { session_id: sid, address: 0x8009, length, bank })));
+        const { bytes } = JSON.parse(
+            textContent(await callTool(client, "read_memory", { session_id: sid, address: 0x8009, length, bank })),
+        );
         return String.fromCharCode(...bytes);
     }
     const romsSid = JSON.parse(
@@ -943,7 +1143,10 @@ async function main() {
     const help = JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id: romsSid })));
     ok("and the MOS finds both", help.screenText.includes("ATS") && help.screenText.includes("AMPLE"));
     await callTool(client, "destroy_machine", { session_id: romsSid });
-    const bank16 = await client.callTool({ name: "create_machine", arguments: { bank_roms: [{ bank: 16, rom: "ats-3.0.rom" }] } });
+    const bank16 = await client.callTool({
+        name: "create_machine",
+        arguments: { bank_roms: [{ bank: 16, rom: "ats-3.0.rom" }] },
+    });
     ok("a bank past 15 is refused", bank16.isError === true);
     const unnamed = await client.callTool({ name: "create_machine", arguments: { extra_roms: [""] } });
     ok("an empty ROM name is refused", unnamed.isError === true);
@@ -951,7 +1154,10 @@ async function main() {
         name: "create_machine",
         arguments: { model: "B-stock", bank_roms: [{ bank: 13, rom: "ats-3.0.rom" }] },
     });
-    ok("a bank the model's own ROMs fill is refused", taken.isError === true && textContent(taken).includes("already holds"));
+    ok(
+        "a bank the model's own ROMs fill is refused",
+        taken.isError === true && textContent(taken).includes("already holds"),
+    );
     const noSocket = await client.callTool({
         name: "create_machine",
         arguments: { model: "B-stock", bank_roms: [{ bank: 3, rom: "ats-3.0.rom" }] },
@@ -959,7 +1165,10 @@ async function main() {
     ok("as is a bank with no socket", noSocket.isError === true && textContent(noSocket).includes("4 ROM sockets"));
     for (const romArgs of [{ extra_roms: ["ats-3.0.rom"] }, { bank_roms: [{ bank: 15, rom: "ats-3.0.rom" }] }]) {
         const atomRoms = await client.callTool({ name: "create_machine", arguments: { model: "Atom", ...romArgs } });
-        ok(`the Atom refuses ${Object.keys(romArgs)[0]}`, atomRoms.isError === true && textContent(atomRoms).includes("no sideways ROM banks"));
+        ok(
+            `the Atom refuses ${Object.keys(romArgs)[0]}`,
+            atomRoms.isError === true && textContent(atomRoms).includes("no sideways ROM banks"),
+        );
     }
 
     // --- Atom ---
@@ -976,7 +1185,10 @@ async function main() {
     ok("and releases them", atomHeld.held_keys.length === 0);
     const atomCaps = await client.callTool({ name: "key_down", arguments: { session_id: atomSid, key: "CAPSLOCK" } });
     ok("a BBC-only name is refused on the Atom", atomCaps.isError === true);
-    ok("with the Atom's own list", textContent(atomCaps).includes("LOCK") && !textContent(atomCaps).includes("CAPSLOCK,"));
+    ok(
+        "with the Atom's own list",
+        textContent(atomCaps).includes("LOCK") && !textContent(atomCaps).includes("CAPSLOCK,"),
+    );
     await callTool(client, "type_input", { session_id: atomSid, text: "PRINT 6*7" });
     const atomRun = JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id: atomSid })));
     console.log("Atom output:", JSON.stringify(atomRun.screenText));
@@ -1007,13 +1219,24 @@ async function main() {
     console.log("history:", JSON.stringify(keptAtStart));
     ok(
         "history is kept from the start, as the page keeps it, and says how far back it reaches",
-        keptAtStart.recent === 3 && keptAtStart.seconds === 30 && keptAtStart.snapshots > 0 && keptAtStart.reaches_back_cycles > 0,
+        keptAtStart.recent === 3 &&
+            keptAtStart.seconds === 30 &&
+            keptAtStart.snapshots > 0 &&
+            keptAtStart.reaches_back_cycles > 0,
     );
 
     // SEI and LDX #0, then for ever JSR to STX &1900 and RTS, and INX.
-    const loopAt = 0x2000, callAt = 0x2003, afterCall = 0x2006, jmpAt = 0x2007, subAt = 0x2010, rtsAt = 0x2013;
+    const loopAt = 0x2000,
+        callAt = 0x2003,
+        afterCall = 0x2006,
+        jmpAt = 0x2007,
+        subAt = 0x2010,
+        rtsAt = 0x2013;
     const counter = 0x1900;
-    await call("write_memory", { address: loopAt, bytes: [0x78, 0xa2, 0x00, 0x20, 0x10, 0x20, 0xe8, 0x4c, 0x03, 0x20] });
+    await call("write_memory", {
+        address: loopAt,
+        bytes: [0x78, 0xa2, 0x00, 0x20, 0x10, 0x20, 0xe8, 0x4c, 0x03, 0x20],
+    });
     await call("write_memory", { address: subAt, bytes: [0x8e, counter & 0xff, counter >> 8, 0x60] });
     const startLoop = async () => {
         await call("type_input", { text: `CALL &${loopAt.toString(16)}` });
@@ -1043,10 +1266,15 @@ async function main() {
     const reversed = await tool("reverse_continue", {});
     ok(
         "reverse_continue lands on the breakpoint's previous hit",
-        reversed.moved && reversed.registers.pc === afterCall && reversed.registers.x === ((stop.registers.x + 0xff) & 0xff),
+        reversed.moved &&
+            reversed.registers.pc === afterCall &&
+            reversed.registers.x === ((stop.registers.x + 0xff) & 0xff),
     );
     const onwards = await tool("run_for_cycles", { cycles: 40000 });
-    ok("and runs on from there to the next hit", onwards.registers.pc === afterCall && onwards.registers.x === stop.registers.x);
+    ok(
+        "and runs on from there to the next hit",
+        onwards.registers.pc === afterCall && onwards.registers.x === stop.registers.x,
+    );
     await tool("step_back", { to_cycle: reversed.registers.elapsed_cycles });
     await call("clear_breakpoint", { id: 0 });
 
@@ -1055,10 +1283,16 @@ async function main() {
     console.log("who_wrote:", JSON.stringify(wrote));
     ok(
         "who_wrote names the instruction and the value, and how long ago",
-        wrote.found && wrote.pc === subAt && wrote.value === reversed.registers.x && wrote.cycles_ago === searchedAt - wrote.cycle,
+        wrote.found &&
+            wrote.pc === subAt &&
+            wrote.value === reversed.registers.x &&
+            wrote.cycles_ago === searchedAt - wrote.cycle,
     );
     const toWrite = await tool("step_back", { to_cycle: wrote.cycle });
-    ok("step_back to_cycle goes to the write", toWrite.moved && toWrite.registers.pc === subAt && toWrite.registers.elapsed_cycles === wrote.cycle);
+    ok(
+        "step_back to_cycle goes to the write",
+        toWrite.moved && toWrite.registers.pc === subAt && toWrite.registers.elapsed_cycles === wrote.cycle,
+    );
     const untouched = await tool("who_wrote", { address: 0x1b00 });
     ok(
         "who_wrote says how far back it looked when nothing wrote the byte",
@@ -1077,7 +1311,9 @@ async function main() {
     const afterRefusal = await tool("read_registers", {});
     ok(
         "step_back refuses to go back past a write to a chosen bank, and stays put",
-        !pastBank.moved && /paged in/.test(pastBank.refusal) && afterRefusal.elapsed_cycles === beforeRefusal.elapsed_cycles,
+        !pastBank.moved &&
+            /paged in/.test(pastBank.refusal) &&
+            afterRefusal.elapsed_cycles === beforeRefusal.elapsed_cycles,
     );
     // Enough frames for a snapshot after the write, so the search stops there rather than refusing outright.
     await tool("run_frames", { count: 5 });
@@ -1086,16 +1322,24 @@ async function main() {
         "who_wrote says what it could not search back past",
         !stoppedAtBank.found && /cannot go back past a write to memory paged in/.test(stoppedAtBank.why),
     );
-    const both = await client.callTool({ name: "step_back", arguments: { session_id: replaySid, over: true, to_cycle: 0 } });
+    const both = await client.callTool({
+        name: "step_back",
+        arguments: { session_id: replaySid, over: true, to_cycle: 0 },
+    });
     ok("step_back refuses over and to_cycle together", both.isError === true);
 
     // Reading the System VIA's timer 1 low byte clears the timer's interrupt flag; peeking at it does not.
-    const sysViaT1Low = 0xfe44, sysViaIfr = 0xfe4d, timer1Flag = 0x40;
+    const sysViaT1Low = 0xfe44,
+        sysViaIfr = 0xfe4d,
+        timer1Flag = 0x40;
     const ifr = async () => (await tool("read_memory", { address: sysViaIfr, length: 1 })).bytes[0];
     await tool("run_frames", { count: 2 });
     const flagged = (await ifr()) & timer1Flag;
     await callTool(client, "disassemble", { session_id: replaySid, address: sysViaT1Low, count: 1 });
-    ok("disassemble at a device register leaves the device as it was", flagged !== 0 && ((await ifr()) & timer1Flag) === flagged);
+    ok(
+        "disassemble at a device register leaves the device as it was",
+        flagged !== 0 && ((await ifr()) & timer1Flag) === flagged,
+    );
 
     const longRunCycles = 2000000;
     const startedAt = (await tool("read_registers", {})).elapsed_cycles;

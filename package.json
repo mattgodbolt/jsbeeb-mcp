@@ -13,7 +13,11 @@
   ],
   "scripts": {
     "start": "node server.js",
-    "test": "node test-mcp-client.js"
+    "test": "node test-mcp-client.js",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "pre-commit": "lint-staged",
+    "prepare": "husky"
   },
   "engines": {
     "node": ">=24.15.0"
@@ -36,5 +40,10 @@
     "ai"
   ],
   "author": "Matt Godbolt",
-  "license": "GPL-3.0-or-later"
+  "license": "GPL-3.0-or-later",
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^17.6.0",
+    "prettier": "^3.9.10"
+  }
 }
