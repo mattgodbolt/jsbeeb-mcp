@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.7.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v4.6.0...v4.7.0) (2026-11-19)
+
+
+### Features
+
+* pass jsbeeb's breakpoint options through, and list, update and drain them ([#73](https://github.com/mattgodbolt/jsbeeb-mcp/issues/73)) ([8b93c67](https://github.com/mattgodbolt/jsbeeb-mcp/commit/8b93c67b3acc40da6f029d4853c070a97a6aab3e))
+
 ## [4.6.0](https://github.com/mattgodbolt/jsbeeb-mcp/compare/v4.5.0...v4.6.0) (2026-11-19)
 
 
