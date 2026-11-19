@@ -306,6 +306,42 @@ async function main() {
     ok("has PC register", typeof regs.pc === "number");
     ok("has pcHex", regs.pcHex.startsWith("0x"));
 
+    // inspect_hardware
+    const inspect = async (args) => JSON.parse(textContent(await callTool(client, "inspect_hardware", args)));
+    const hardware = await inspect({ session_id });
+    ok("inspect_hardware gives both VIAs", typeof hardware.sysvia?.ddrb === "number" && !!hardware.uservia);
+    const sysvia = await inspect({ session_id, device: "sysvia" });
+    ok("inspect_hardware gives one device by name", sysvia.ddrb === hardware.sysvia.ddrb && !("uservia" in sysvia));
+    const unknownDevice = await client.callTool({
+        name: "inspect_hardware",
+        arguments: { session_id, device: "nonesuch" },
+    });
+    ok(
+        "inspect_hardware refuses an unknown device, naming the real ones",
+        unknownDevice.isError === true && /sysvia/.test(textContent(unknownDevice)),
+    );
+
+    // Timer 1's flag, with its interrupt disabled so that nothing clears it, is what reading T1CL would clear.
+    const Ier = 0xfe4e;
+    const Timer1Flag = 0x40;
+    await callTool(client, "write_memory", { session_id, address: Ier, bytes: [Timer1Flag] });
+    await callTool(client, "run_for_cycles", { session_id, cycles: 30000 });
+    const t1Flagged = await inspect({ session_id, device: "sysvia" });
+    ok("inspect_hardware setup: timer 1's flag is set", (t1Flagged.ifr & Timer1Flag) !== 0);
+    const t1FlaggedAgain = await inspect({ session_id, device: "sysvia" });
+    ok(
+        "inspect_hardware leaves interrupt flags alone",
+        (t1FlaggedAgain.ifr & Timer1Flag) !== 0 && t1FlaggedAgain.ifr === t1Flagged.ifr,
+    );
+    await callTool(client, "write_memory", { session_id, address: Ier, bytes: [0x80 | Timer1Flag] });
+
+    // Which devices there are depends on the machine.
+    const master = JSON.parse(textContent(await callTool(client, "create_machine", { model: "Master" })));
+    const masterHardware = await inspect({ session_id: master.session_id });
+    ok("inspect_hardware gives a Master its CMOS", !!masterHardware.cmos && !!masterHardware.paging);
+    ok("inspect_hardware gives a Model B no CMOS", !("cmos" in hardware));
+    await callTool(client, "destroy_machine", { session_id: master.session_id });
+
     // screenshot
     const ssResult = await callTool(client, "screenshot", { session_id, active_only: true });
     const ssImg = imageContent(ssResult);
