@@ -1358,48 +1358,169 @@ tool(
     },
 );
 
+const BreakpointKinds = ["execute", "read", "write", "access", "brk", "undocumented", "irq", "nmi", "vsync", "line"];
+const DefaultLogHits = 1000;
+const MaxLoggedHits = 10000;
+
+const ConditionHelp =
+    "A condition is an expression over the registers A X Y S PC P, the flags C Z I D V N (1 or 0), `value` " +
+    "and `old` (the byte read or written, and the byte a write replaces), with ?addr for a byte of memory " +
+    "read without side effects. Numbers are &FF, $FF, 0xFF or decimal. Operators: || &&, then OR EOR AND " +
+    "(or | ^ &), = == <> !=, < <= > >=, + -, and unary ! NOT - ?. As in BBC BASIC true is -1. " +
+    "For example: A = &0D AND ?&70 <> 0, or ?PC = 169 && ?(PC+1) = 244.";
+
+const BreakpointFieldParams = {
+    bank: z
+        .number()
+        .int()
+        .min(0)
+        .max(15)
+        .optional()
+        .describe(
+            "Only break while this sideways bank is paged in at &8000–&BFFF, to stop in one ROM " +
+                "(12 to 15 on B-stock and B-MOS0.10)",
+        ),
+    end: z
+        .number()
+        .int()
+        .min(0)
+        .max(65535)
+        .optional()
+        .describe("The last address covered, to break on a range from address (execute, read, write or access)"),
+    line: z.number().int().min(0).optional().describe("The TV line a 'line' breakpoint stops at"),
+    condition: z.string().optional().describe(`Only act when this is true. ${ConditionHelp}`),
+    hit_count: z.number().int().min(1).optional().describe("Act on this hit and every one after; 1 if not given"),
+    action: z
+        .enum(["stop", "log"])
+        .optional()
+        .describe("'stop' (the default) stops the run. 'log' records each hit for drain_breakpoint_log and runs on"),
+    enabled: z.boolean().optional().describe("Whether the breakpoint acts; true if not given"),
+};
+
+/** A breakpoint as the MCP reports it, from jsbeeb's own names. */
+function describeBreakpoint({ id, type, address, end, bank, line, condition, hitCount, action, enabled, hits }) {
+    return {
+        breakpoint_id: id,
+        type,
+        address,
+        addressHex: address === undefined ? undefined : hexAddress(address),
+        end,
+        bank,
+        line,
+        condition,
+        hit_count: hitCount,
+        action,
+        enabled,
+        hits,
+    };
+}
+
+/** The names jsbeeb's breakpoint calls take, for the fields the caller gave. */
+function breakpointOptions({ bank, end, line, condition, hit_count, action, enabled }) {
+    const options = { bank, end, line, condition, hitCount: hit_count, action, enabled };
+    return Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined));
+}
+
 tool(
     "set_breakpoint",
     "Set a persistent breakpoint. The breakpoint stays active across multiple " +
         "run_for_cycles calls until removed with clear_breakpoint. When a breakpoint " +
         "fires, run_for_cycles returns early and reports which breakpoint was hit. " +
-        "Types: 'execute' (PC reaches address), 'read' (memory read), 'write' (memory write). " +
-        "An address in &8000–&BFFF is in whichever sideways ROM is paged in; give bank to stop in one ROM only.",
+        "Types: 'execute' (PC reaches address), 'read' (memory read), 'write' (memory write), " +
+        "'access' (a read or a write), and the kinds with no address: 'brk' (before a BRK runs), " +
+        "'undocumented' (before an undocumented opcode), 'irq' and 'nmi' (as the CPU takes one), " +
+        "'vsync' (as vsync starts) and 'line' (as the beam reaches the TV line you give). " +
+        "Give end for a range of addresses, condition to act only when an expression holds, and hit_count " +
+        "to act from the Nth hit on. With action 'log' the breakpoint does not stop the run: it records " +
+        "each hit (address, pc, and the value and old value of a write) for drain_breakpoint_log, " +
+        "which is how to see every write to a range. " +
+        "An address in &8000–&BFFF is in whichever sideways ROM is paged in; give bank to stop in one ROM only. " +
+        `${ConditionHelp}`,
     {
         session_id: z.string().describe("Session ID from create_machine"),
-        address: z.number().min(0).max(65535).describe("Address to break on (0–65535)"),
-        type: z
-            .enum(["execute", "read", "write"])
-            .default("execute")
-            .describe("Breakpoint type: execute (PC), read (memory read), write (memory write)"),
-        bank: z
+        address: z
             .number()
             .int()
             .min(0)
-            .max(15)
+            .max(65535)
             .optional()
             .describe(
-                "Only break while this sideways bank is paged in at &8000–&BFFF, to stop in one ROM " +
-                    "(12 to 15 on B-stock and B-MOS0.10)",
+                "Address to break on (0–65535); needed for execute, read, write and access, and not for the rest",
             ),
+        type: z
+            .enum(BreakpointKinds)
+            .default("execute")
+            .describe(
+                "Breakpoint type: execute (PC), read, write, access (read or write), brk, undocumented, irq, nmi, vsync or line",
+            ),
+        ...BreakpointFieldParams,
     },
-    async ({ session_id, address, type, bank }) => {
+    async ({ session_id, address, type, ...fields }) => {
         const session = requireSession(session_id);
-        const id = session.addBreakpoint(type, address, { bank });
-        return {
-            content: [
-                {
-                    type: "text",
-                    text: JSON.stringify({
-                        breakpoint_id: id,
-                        type,
-                        address,
-                        addressHex: hexAddress(address),
-                        bank,
-                    }),
-                },
-            ],
-        };
+        const id = session.addBreakpoint(type, address, breakpointOptions(fields));
+        const [breakpoint] = session.listBreakpoints().filter((candidate) => candidate.id === id);
+        return { content: [{ type: "text", text: JSON.stringify(describeBreakpoint(breakpoint)) }] };
+    },
+);
+
+tool(
+    "list_breakpoints",
+    "List this machine's breakpoints, each with its type, address or range, bank, condition, hit_count, " +
+        "action, whether it is enabled, and hits, how many times it has been reached.",
+    { session_id: z.string().describe("Session ID from create_machine") },
+    async ({ session_id }) => {
+        const session = requireSession(session_id);
+        const breakpoints = session.listBreakpoints().map(describeBreakpoint);
+        return { content: [{ type: "text", text: JSON.stringify({ breakpoints }) }] };
+    },
+);
+
+tool(
+    "update_breakpoint",
+    "Change a breakpoint's bank, end, line, condition, hit_count, action or enabled, as set_breakpoint names " +
+        "them, without setting it again: to switch one off and on, change a condition, or turn a stop into a log. " +
+        "Fields you leave out keep their values.",
+    {
+        session_id: z.string().describe("Session ID from create_machine"),
+        id: z.number().int().describe("Breakpoint ID from set_breakpoint or list_breakpoints"),
+        ...BreakpointFieldParams,
+    },
+    async ({ session_id, id, ...fields }) => {
+        const session = requireSession(session_id);
+        session.updateBreakpoint(id, breakpointOptions(fields));
+        const [breakpoint] = session.listBreakpoints().filter((candidate) => candidate.id === id);
+        return { content: [{ type: "text", text: JSON.stringify(describeBreakpoint(breakpoint)) }] };
+    },
+);
+
+tool(
+    "drain_breakpoint_log",
+    "Return the hits that breakpoints with action 'log' recorded since the last call, oldest first, and clear " +
+        "them. Each hit has the breakpoint id, kind and access, the address, the pc of the instruction that made " +
+        "the access, and for a read or write the value, and for a write also old, the byte it replaced. " +
+        "dropped counts the hits beyond the first 10000 since the last call, which are not kept. " +
+        "limit caps how many are returned here (1000 by default); any more than that are counted in omitted " +
+        "and are gone, so raise limit or drain more often when a log is long.",
+    {
+        session_id: z.string().describe("Session ID from create_machine"),
+        limit: z
+            .number()
+            .int()
+            .min(1)
+            .max(MaxLoggedHits)
+            .default(DefaultLogHits)
+            .describe(`The most hits to return (default ${DefaultLogHits}, at most ${MaxLoggedHits})`),
+    },
+    async ({ session_id, limit }) => {
+        const session = requireSession(session_id);
+        const { hits, dropped } = session.drainBreakpointLog();
+        const returned = hits.slice(0, limit).map((hit) => ({
+            ...hit,
+            addressHex: hexAddress(hit.address),
+            pcHex: hexAddress(hit.pc),
+        }));
+        const result = { hits: returned, dropped, omitted: hits.length - returned.length };
+        return { content: [{ type: "text", text: JSON.stringify(result) }] };
     },
 );
 

@@ -616,6 +616,156 @@ async function main() {
 
     await callTool(client, "destroy_machine", { session_id: sid2 });
 
+    // --- breakpoint options, the log, list and update ---
+    console.log("\n--- breakpoint options ---");
+    const bpSession = JSON.parse(
+        textContent(await callTool(client, "create_machine", { model: "B-DFS1.2" })),
+    ).session_id;
+    const bp = async (name, args) =>
+        JSON.parse(textContent(await callTool(client, name, { session_id: bpSession, ...args })));
+    const typeBasic = async (text) => {
+        await callTool(client, "type_input", { session_id: bpSession, text });
+        return JSON.parse(textContent(await callTool(client, "run_until_prompt", { session_id: bpSession })));
+    };
+    const ScratchStart = 0x900;
+    const ScratchEnd = 0x903;
+    const ScratchWrites = (values) =>
+        values.map(([offset, value]) => `?&${(ScratchStart + offset).toString(16)}=${value}`).join(":");
+
+    // A log of writes to a range, which does not stop the run.
+    const logged = await bp("set_breakpoint", {
+        type: "write",
+        address: ScratchStart,
+        end: ScratchEnd,
+        action: "log",
+    });
+    ok("set_breakpoint reports a range and its action", logged.end === ScratchEnd && logged.action === "log");
+    const loggedRun = await typeBasic(
+        ScratchWrites([
+            [0, 5],
+            [2, 7],
+        ]),
+    );
+    ok("a logging breakpoint does not stop the run", !loggedRun.breakpoint && loggedRun.screenText !== undefined);
+    const log = await bp("drain_breakpoint_log", {});
+    ok("the log has both writes, oldest first", log.hits.length === 2 && log.omitted === 0 && log.dropped === 0);
+    ok(
+        "a logged write gives its address, value and the byte it replaced",
+        log.hits[0].address === ScratchStart &&
+            log.hits[0].value === 5 &&
+            typeof log.hits[0].old === "number" &&
+            log.hits[1].address === ScratchStart + 2 &&
+            log.hits[1].value === 7 &&
+            log.hits[0].addressHex === "0x0900",
+    );
+    ok("draining empties the log", (await bp("drain_breakpoint_log", {})).hits.length === 0);
+
+    // limit keeps the first hits and counts the rest as omitted.
+    await typeBasic(
+        ScratchWrites([
+            [0, 1],
+            [1, 2],
+            [2, 3],
+            [3, 4],
+        ]),
+    );
+    const limited = await bp("drain_breakpoint_log", { limit: 2 });
+    ok("limit returns only that many hits", limited.hits.length === 2 && limited.omitted === 2);
+
+    // list_breakpoints and update_breakpoint.
+    const bpList = (await bp("list_breakpoints", {})).breakpoints;
+    ok(
+        "list_breakpoints counts the hits",
+        bpList.length === 1 && bpList[0].breakpoint_id === logged.breakpoint_id && bpList[0].hits >= 6,
+    );
+    const hitsBefore = bpList[0].hits;
+    const disabled = await bp("update_breakpoint", { id: logged.breakpoint_id, enabled: false });
+    ok("update_breakpoint disables a breakpoint", disabled.enabled === false);
+    await typeBasic(ScratchWrites([[0, 9]]));
+    ok("a disabled breakpoint logs nothing", (await bp("drain_breakpoint_log", {})).hits.length === 0);
+    await bp("update_breakpoint", { id: logged.breakpoint_id, enabled: true });
+    ok("and counts nothing", (await bp("list_breakpoints", {})).breakpoints[0].hits === hitsBefore);
+    await callTool(client, "clear_breakpoint", { session_id: bpSession, id: 0 });
+    ok("clear_breakpoint empties the list", (await bp("list_breakpoints", {})).breakpoints.length === 0);
+
+    // A condition on the value written.
+    await bp("set_breakpoint", {
+        type: "write",
+        address: ScratchStart,
+        action: "log",
+        condition: "value = 9",
+    });
+    await typeBasic(
+        ScratchWrites([
+            [0, 5],
+            [0, 9],
+            [0, 5],
+        ]),
+    );
+    const conditional = await bp("drain_breakpoint_log", {});
+    ok(
+        "a condition logs only the writes it holds for",
+        conditional.hits.length === 1 && conditional.hits[0].value === 9,
+    );
+    await callTool(client, "clear_breakpoint", { session_id: bpSession, id: 0 });
+
+    // hit_count acts from the Nth hit on.
+    await bp("set_breakpoint", {
+        type: "write",
+        address: ScratchStart,
+        end: ScratchEnd,
+        action: "log",
+        hit_count: 2,
+    });
+    await typeBasic(
+        ScratchWrites([
+            [0, 1],
+            [1, 2],
+            [2, 3],
+        ]),
+    );
+    const counted = await bp("drain_breakpoint_log", {});
+    ok("hit_count acts from that hit on", counted.hits.length === 2 && counted.hits[0].address === ScratchStart + 1);
+    await callTool(client, "clear_breakpoint", { session_id: bpSession, id: 0 });
+
+    // A kind with no address.
+    const vsync = await bp("set_breakpoint", { type: "vsync", action: "log" });
+    ok("a vsync breakpoint needs no address", vsync.address === undefined && vsync.type === "vsync");
+    await callTool(client, "run_frames", { session_id: bpSession, count: 3 });
+    const vsyncs = await bp("drain_breakpoint_log", {});
+    ok("and logs each vsync", vsyncs.hits.length >= 2 && vsyncs.hits.every((hit) => hit.kind === "vsync"));
+    await callTool(client, "clear_breakpoint", { session_id: bpSession, id: 0 });
+
+    // jsbeeb's own refusals reach the caller.
+    const noAddress = await client.callTool({
+        name: "set_breakpoint",
+        arguments: { session_id: bpSession, type: "write" },
+    });
+    ok("a write breakpoint without an address is refused", noAddress.isError === true);
+    const fractionalAddress = await client.callTool({
+        name: "set_breakpoint",
+        arguments: { session_id: bpSession, type: "write", address: 2304.5 },
+    });
+    ok("a fractional address is refused", fractionalAddress.isError === true);
+    const addressedEvent = await client.callTool({
+        name: "set_breakpoint",
+        arguments: { session_id: bpSession, type: "brk", address: 0x900 },
+    });
+    ok("a brk breakpoint with an address is refused", addressedEvent.isError === true);
+    const badCondition = await client.callTool({
+        name: "set_breakpoint",
+        arguments: { session_id: bpSession, address: 0x900, condition: "A = " },
+    });
+    ok("a condition that does not parse is refused", badCondition.isError === true);
+    ok("and leaves no breakpoint behind", (await bp("list_breakpoints", {})).breakpoints.length === 0);
+    const unknownId = await client.callTool({
+        name: "update_breakpoint",
+        arguments: { session_id: bpSession, id: 9999, enabled: false },
+    });
+    ok("updating an unknown breakpoint is refused", unknownId.isError === true);
+
+    await callTool(client, "destroy_machine", { session_id: bpSession });
+
     // --- boot_disc ---
     console.log("\n--- boot_disc ---");
     const createResult3 = await callTool(client, "create_machine", { model: "B-DFS1.2" });
